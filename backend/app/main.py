@@ -1,5 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+origins = [
+    "https://megamartcom.netlify.app",  # Netlify production
+    "http://localhost:5173",            # Local dev
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,      # <-- Only allowed origins
+    allow_credentials=True,     # <-- Needed if you use cookies/auth headers
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from .config import settings
