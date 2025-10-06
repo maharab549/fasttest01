@@ -1,18 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
-origins = [
-    "https://megamartcom.netlify.app",  # Netlify production
-    "http://localhost:5173",            # Local dev
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,      # <-- Only allowed origins
-    allow_credentials=True,     # <-- Needed if you use cookies/auth headers
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from .config import settings
@@ -34,10 +21,15 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-# CORS middleware
+# CORS middleware: allow only your Netlify frontend and local dev
+origins = [
+    "https://megamartcom.netlify.app",  # Netlify production frontend
+    "http://localhost:5173",             # Local development frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for demo
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,4 +123,3 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.debug
     )
-
