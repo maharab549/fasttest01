@@ -16,44 +16,25 @@ from .ws_redis import bridge
 import os
 from datetime import datetime
 
-# ----------------------------------------------------------------
-#  Database initialization
-# ----------------------------------------------------------------
+# ------------------- Database -------------------
 models.Base.metadata.create_all(bind=engine)
 
-# ----------------------------------------------------------------
-#  FastAPI app creation
-# ----------------------------------------------------------------
+# ------------------- App -------------------
 app = FastAPI(
     title="Marketplace API",
-    description="A comprehensive marketplace API with authentication, product, cart, and order systems",
+    description="Marketplace API with authentication, products, cart, and orders",
     version="1.1.1",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
 
-# ----------------------------------------------------------------
-#  Security & middleware
-# ----------------------------------------------------------------
+# ------------------- Middleware -------------------
 
-# Enforce HTTPS redirect (only in production)
+# HTTPS redirect (production only)
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# Allow only your trusted domains
-# ✅ FIXED CORS CONFIG (Render + Netlify compatible)
-from fastapi.middleware.cors import CORSMiddleware
-#from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-
-# Trust Render/Netlify proxy headers
-#app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-
-# Force HTTPS only in production
-if not settings.debug:
-    app.add_middleware(HTTPSRedirectMiddleware)
-
-# ✅ Allow both production and preview Netlify URLs
+# CORS for Netlify + localhost
 origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
@@ -69,43 +50,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Restrict allowed hosts
+# Trusted hosts
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=["localhost", "127.0.0.1", "*.vercel.app", "*.onrender.com", "megamartcom.netlify.app"]
 )
 
-# ----------------------------------------------------------------
-#  Static files setup
-# ----------------------------------------------------------------
+# ------------------- Static files -------------------
 uploads_dir = "uploads"
-if not os.path.exists(uploads_dir):
-    os.makedirs(uploads_dir)
+os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
-# ----------------------------------------------------------------
-#  Routers
-# ----------------------------------------------------------------
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(products.router, prefix="/api/v1")
-app.include_router(cart.router, prefix="/api/v1")
-app.include_router(orders.router, prefix="/api/v1")
-app.include_router(categories.router, prefix="/api/v1")
-app.include_router(seller.router, prefix="/api/v1")
-app.include_router(admin.router, prefix="/api/v1")
-app.include_router(payments.router, prefix="/api/v1")
-app.include_router(messages.router, prefix="/api/v1")
-app.include_router(notifications.router, prefix="/api/v1")
-app.include_router(user_stats.router, prefix="/api/v1")
-app.include_router(favorites.router, prefix="/api/v1")
-app.include_router(sms.router, prefix="/api/v1")
-app.include_router(reviews.router, prefix="/api/v1")
-app.include_router(ws_messages.router)
+# ------------------- Routers -------------------
+routers = [
+    auth, products, cart, orders, categories, seller, admin,
+    payments, messages, notifications, user_stats, favorites,
+    sms, reviews, ws_messages
+]
+for r in routers:
+    app.include_router(r.router, prefix="/api/v1")
 
-# ----------------------------------------------------------------
-#  Redis Bridge
-# ----------------------------------------------------------------
+# ------------------- Redis Bridge -------------------
 @app.on_event("startup")
 async def startup_events():
     try:
@@ -120,38 +85,26 @@ async def shutdown_events():
     except Exception:
         pass
 
-# ----------------------------------------------------------------
-#  Core endpoints
-# ----------------------------------------------------------------
+# ------------------- Core endpoints -------------------
 @app.get("/")
 def read_root():
-    return {
-        "message": "Welcome to Marketplace API (Render Version)",
-        "version": "1.1.1",
-        "docs": "/api/docs",
-        "redoc": "/api/redoc"
-    }
+    return {"message": "Welcome to Marketplace API", "version": "1.1.1"}
 
 @app.get("/api/v1/health")
 def health_check():
-    return {"status": "healthy", "message": "Marketplace API is running securely"}
+    return {"status": "healthy", "message": "API running securely"}
 
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):
-    """Simple endpoint to test Netlify ↔ FastAPI connectivity"""
-    client_host = request.client.host
-    scheme = request.url.scheme
     return {
         "status": "success",
         "message": "Frontend ↔ Backend connection OK",
-        "client_ip": client_host,
-        "protocol": scheme,
+        "client_ip": request.client.host,
+        "protocol": request.url.scheme,
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
-# ----------------------------------------------------------------
-#  Exception handlers
-# ----------------------------------------------------------------
+# ------------------- Exception handlers -------------------
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     return JSONResponse(status_code=404, content={"detail": "Endpoint not found"})
@@ -160,14 +113,7 @@ async def not_found_handler(request: Request, exc):
 async def internal_error_handler(request: Request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-# ----------------------------------------------------------------
-#  Entry point
-# ----------------------------------------------------------------
+# ------------------- Entry point -------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.debug
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.debug)
