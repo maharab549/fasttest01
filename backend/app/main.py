@@ -43,11 +43,11 @@ if not settings.debug:
 # Allow only your trusted domains
 # ✅ FIXED CORS CONFIG (Render + Netlify compatible)
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+#from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 # Trust Render/Netlify proxy headers
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+#app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Force HTTPS only in production
 if not settings.debug:
