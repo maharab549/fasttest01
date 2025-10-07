@@ -49,12 +49,11 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Temporarily allow all origins to fix the issue
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
+ )
 # Trusted hosts
 app.add_middleware(
     TrustedHostMiddleware,
