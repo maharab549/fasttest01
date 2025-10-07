@@ -4,7 +4,6 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 from .config import settings
 from .database import engine
 from . import models
@@ -14,8 +13,8 @@ from .routers import (
     sms, reviews, ws_messages
 )
 from .ws_redis import bridge
-from datetime import datetime
 import os
+from datetime import datetime
 
 # ----------------------------------------------------------------
 #  Database initialization
@@ -28,51 +27,42 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Marketplace API",
     description="A comprehensive marketplace API with authentication, product, cart, and order systems",
-    version="1.1.0",
+    version="1.1.1",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
 
 # ----------------------------------------------------------------
-#  Middleware setup
+#  Security & middleware
 # ----------------------------------------------------------------
 
-# ✅ Trust proxy headers (important for Render/Netlify)
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-
-# ✅ Enforce HTTPS in production
+# Enforce HTTPS redirect (only in production)
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# ✅ Allowed origins for CORS
+# Allow only your trusted domains
 origins = [
-    "https://megamartcom.netlify.app",                       # main production site
-    "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",  # deploy preview
-    "http://localhost:5173",                                 # local dev
+    "https://megamartcom.netlify.app",
+    "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
+    "http://localhost:5173",
+    "http://localhost:3000"
 ]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,         # only trusted domains
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Restrict allowed hosts (optional)
+# Restrict allowed hosts
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=[
-        "localhost",
-        "127.0.0.1",
-        "*.onrender.com",
-        "*.vercel.app",
-        "megamartcom.netlify.app"
-    ]
+    allowed_hosts=["localhost", "127.0.0.1", "*.vercel.app", "*.onrender.com", "megamartcom.netlify.app"]
 )
 
 # ----------------------------------------------------------------
-#  Static files
+#  Static files setup
 # ----------------------------------------------------------------
 uploads_dir = "uploads"
 if not os.path.exists(uploads_dir):
@@ -96,10 +86,10 @@ app.include_router(user_stats.router, prefix="/api/v1")
 app.include_router(favorites.router, prefix="/api/v1")
 app.include_router(sms.router, prefix="/api/v1")
 app.include_router(reviews.router, prefix="/api/v1")
-app.include_router(ws_messages.router)  # WebSocket routes
+app.include_router(ws_messages.router)
 
 # ----------------------------------------------------------------
-#  Redis bridge lifecycle
+#  Redis Bridge
 # ----------------------------------------------------------------
 @app.on_event("startup")
 async def startup_events():
@@ -116,13 +106,13 @@ async def shutdown_events():
         pass
 
 # ----------------------------------------------------------------
-#  Health & test routes
+#  Core endpoints
 # ----------------------------------------------------------------
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to Marketplace API (Secure Version)",
-        "version": "1.1.0",
+        "message": "Welcome to Marketplace API (Render Version)",
+        "version": "1.1.1",
         "docs": "/api/docs",
         "redoc": "/api/redoc"
     }
@@ -133,7 +123,7 @@ def health_check():
 
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):
-    """Test endpoint to verify Netlify ↔ Render CORS + HTTPS + proxy headers"""
+    """Simple endpoint to test Netlify ↔ FastAPI connectivity"""
     client_host = request.client.host
     scheme = request.url.scheme
     return {
@@ -156,7 +146,7 @@ async def internal_error_handler(request: Request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # ----------------------------------------------------------------
-#  Entry point (local run)
+#  Entry point
 # ----------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
