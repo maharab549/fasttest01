@@ -16,25 +16,30 @@ from .ws_redis import bridge
 import os
 from datetime import datetime
 
-# ------------------- Database -------------------
+# ----------------------------------------------------------------
+# Database initialization
+# ----------------------------------------------------------------
 models.Base.metadata.create_all(bind=engine)
 
-# ------------------- App -------------------
+# ----------------------------------------------------------------
+# FastAPI app creation
+# ----------------------------------------------------------------
 app = FastAPI(
     title="Marketplace API",
-    description="Marketplace API with authentication, products, cart, and orders",
+    description="A comprehensive marketplace API with authentication, product, cart, and order systems",
     version="1.1.1",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
 
-# ------------------- Middleware -------------------
+# ----------------------------------------------------------------
+# Security & middleware
+# ----------------------------------------------------------------
 
-# HTTPS redirect (production only)
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# CORS for Netlify + localhost
+# Allow CORS for frontend
 origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
@@ -56,21 +61,28 @@ app.add_middleware(
     allowed_hosts=["localhost", "127.0.0.1", "*.vercel.app", "*.onrender.com", "megamartcom.netlify.app"]
 )
 
-# ------------------- Static files -------------------
+# ----------------------------------------------------------------
+# Static files setup
+# ----------------------------------------------------------------
 uploads_dir = "uploads"
 os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
-# ------------------- Routers -------------------
+# ----------------------------------------------------------------
+# Routers
+# ----------------------------------------------------------------
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
     sms, reviews, ws_messages
 ]
-for r in routers:
-    app.include_router(r.router, prefix="/api/v1")
 
-# ------------------- Redis Bridge -------------------
+for router in routers:
+    app.include_router(router.router, prefix="/api/v1")
+
+# ----------------------------------------------------------------
+# Redis Bridge
+# ----------------------------------------------------------------
 @app.on_event("startup")
 async def startup_events():
     try:
@@ -85,26 +97,37 @@ async def shutdown_events():
     except Exception:
         pass
 
-# ------------------- Core endpoints -------------------
+# ----------------------------------------------------------------
+# Core endpoints
+# ----------------------------------------------------------------
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to Marketplace API", "version": "1.1.1"}
+    return {
+        "message": "Welcome to Marketplace API (Render Version)",
+        "version": "1.1.1",
+        "docs": "/api/docs",
+        "redoc": "/api/redoc"
+    }
 
 @app.get("/api/v1/health")
 def health_check():
-    return {"status": "healthy", "message": "API running securely"}
+    return {"status": "healthy", "message": "Marketplace API is running securely"}
 
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):
+    client_host = request.client.host
+    scheme = request.url.scheme
     return {
         "status": "success",
         "message": "Frontend ↔ Backend connection OK",
-        "client_ip": request.client.host,
-        "protocol": request.url.scheme,
+        "client_ip": client_host,
+        "protocol": scheme,
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
-# ------------------- Exception handlers -------------------
+# ----------------------------------------------------------------
+# Exception handlers
+# ----------------------------------------------------------------
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     return JSONResponse(status_code=404, content={"detail": "Endpoint not found"})
@@ -113,7 +136,14 @@ async def not_found_handler(request: Request, exc):
 async def internal_error_handler(request: Request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-# ------------------- Entry point -------------------
+# ----------------------------------------------------------------
+# Entry point
+# ----------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.debug)
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=settings.debug
+    )
