@@ -14,6 +14,7 @@ from .routers import (
     sms, reviews, ws_messages
 )
 from .ws_redis import bridge
+from datetime import datetime
 import os
 
 # ----------------------------------------------------------------
@@ -33,38 +34,45 @@ app = FastAPI(
 )
 
 # ----------------------------------------------------------------
-#  Security & middleware
+#  Middleware setup
 # ----------------------------------------------------------------
 
-# Trust proxy headers (important for Vercel, Render, Railway)
-# so FastAPI can correctly detect the original client IP & scheme
+# ✅ Trust proxy headers (important for Render/Netlify)
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-# Enforce HTTPS redirect (only useful in production)
+# ✅ Enforce HTTPS in production
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# Allow only your trusted domains
+# ✅ Allowed origins for CORS
 origins = [
-    "https://megamartcom.netlify.app",  # Netlify production frontend
-    "http://localhost:5173",             # Local development
+    "https://megamartcom.netlify.app",                       # main production site
+    "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",  # deploy preview
+    "http://localhost:5173",                                 # local dev
 ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins,         # only trusted domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Restrict allowed hosts (optional, security hardening)
+# ✅ Restrict allowed hosts (optional)
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "*.vercel.app", "*.onrender.com", "megamartcom.netlify.app"]
+    allowed_hosts=[
+        "localhost",
+        "127.0.0.1",
+        "*.onrender.com",
+        "*.vercel.app",
+        "megamartcom.netlify.app"
+    ]
 )
 
 # ----------------------------------------------------------------
-#  Static files setup
+#  Static files
 # ----------------------------------------------------------------
 uploads_dir = "uploads"
 if not os.path.exists(uploads_dir):
@@ -91,7 +99,7 @@ app.include_router(reviews.router, prefix="/api/v1")
 app.include_router(ws_messages.router)  # WebSocket routes
 
 # ----------------------------------------------------------------
-#  Redis Bridge
+#  Redis bridge lifecycle
 # ----------------------------------------------------------------
 @app.on_event("startup")
 async def startup_events():
@@ -108,7 +116,7 @@ async def shutdown_events():
         pass
 
 # ----------------------------------------------------------------
-#  Core endpoints
+#  Health & test routes
 # ----------------------------------------------------------------
 @app.get("/")
 def read_root():
@@ -123,6 +131,19 @@ def read_root():
 def health_check():
     return {"status": "healthy", "message": "Marketplace API is running securely"}
 
+@app.get("/api/v1/test_frontend")
+async def test_frontend(request: Request):
+    """Test endpoint to verify Netlify ↔ Render CORS + HTTPS + proxy headers"""
+    client_host = request.client.host
+    scheme = request.url.scheme
+    return {
+        "status": "success",
+        "message": "Frontend ↔ Backend connection OK",
+        "client_ip": client_host,
+        "protocol": scheme,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
 # ----------------------------------------------------------------
 #  Exception handlers
 # ----------------------------------------------------------------
@@ -135,7 +156,7 @@ async def internal_error_handler(request: Request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # ----------------------------------------------------------------
-#  Entry point
+#  Entry point (local run)
 # ----------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
@@ -145,18 +166,3 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.debug
     )
-    from datetime import datetime
-
-@app.get("/api/v1/test_frontend")
-async def test_frontend(request: Request):
-    """Simple endpoint to test Netlify ↔ FastAPI connectivity"""
-    client_host = request.client.host
-    scheme = request.url.scheme
-    return {
-        "status": "success",
-        "message": "Frontend ↔ Backend connection OK",
-        "client_ip": client_host,
-        "protocol": scheme,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }
-
