@@ -41,12 +41,26 @@ if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # Allow only your trusted domains
+# ✅ FIXED CORS CONFIG (Render + Netlify compatible)
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+# Trust Render/Netlify proxy headers
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+# Force HTTPS only in production
+if not settings.debug:
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+# ✅ Allow both production and preview Netlify URLs
 origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
     "http://localhost:5173",
-    "http://localhost:3000"
+    "http://localhost:3000",
 ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -54,6 +68,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Restrict allowed hosts
 app.add_middleware(
