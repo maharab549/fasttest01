@@ -5,6 +5,7 @@ sqlalchemy==2.0.43
 alembic==1.16.5
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-multipart==0.0.20
 redis>=5.0.0
 stripe==12.5.1
