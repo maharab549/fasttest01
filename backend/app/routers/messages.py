@@ -30,7 +30,12 @@ async def send_message(
         subject=message.subject,
         content=message.content,
         related_order_id=message.related_order_id,
-        related_product_id=message.related_product_id
+        related_product_id=message.related_product_id,
+        attachment_type=message.attachment_type,
+        attachment_url=message.attachment_url,
+        attachment_filename=message.attachment_filename,
+        attachment_size=message.attachment_size,
+        attachment_thumbnail=message.attachment_thumbnail
     )
     
     db.add(db_message)
@@ -56,6 +61,11 @@ async def send_message(
             "subject": db_message.subject,
             "content": db_message.content,
             "is_read": db_message.is_read,
+            "attachment_type": db_message.attachment_type,
+            "attachment_url": db_message.attachment_url,
+            "attachment_filename": db_message.attachment_filename,
+            "attachment_size": db_message.attachment_size,
+            "attachment_thumbnail": db_message.attachment_thumbnail,
             "created_at": db_message.created_at.isoformat()
         },
         "receiver_id": db_message.receiver_id,

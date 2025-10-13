@@ -196,10 +196,18 @@ class Message(Base):
     sender_id = Column(Integer, ForeignKey("users.id"))
     receiver_id = Column(Integer, ForeignKey("users.id"))
     subject = Column(String, nullable=True)
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)  # Made nullable for media-only messages
     is_read = Column(Boolean, default=False)
     related_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     related_product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    
+    # Media attachment fields
+    attachment_type = Column(String, nullable=True)  # 'image', 'video', 'sticker', 'file'
+    attachment_url = Column(String, nullable=True)
+    attachment_filename = Column(String, nullable=True)
+    attachment_size = Column(Integer, nullable=True)  # in bytes
+    attachment_thumbnail = Column(String, nullable=True)  # thumbnail URL for videos
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -243,4 +251,3 @@ class SMSMessage(Base):
     
     # Relationships
     sender = relationship("User")
-

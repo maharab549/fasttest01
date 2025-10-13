@@ -272,9 +272,16 @@ class MessageResponse(BaseModel):
 class MessageBase(BaseModel):
     receiver_id: int
     subject: Optional[str] = None
-    content: str
+    content: Optional[str] = None  # Made optional for media-only messages
     related_order_id: Optional[int] = None
     related_product_id: Optional[int] = None
+    
+    # Media attachment fields
+    attachment_type: Optional[str] = None  # 'image', 'video', 'sticker', 'file'
+    attachment_url: Optional[str] = None
+    attachment_filename: Optional[str] = None
+    attachment_size: Optional[int] = None
+    attachment_thumbnail: Optional[str] = None
 
 
 class MessageCreate(MessageBase):
@@ -313,4 +320,3 @@ class Notification(NotificationBase):
     
     class Config:
         from_attributes = True
-
