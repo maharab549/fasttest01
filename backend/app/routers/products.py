@@ -9,7 +9,7 @@ from ..config import settings
 # otherwise default to False to avoid NameError when the setting is not present.
 ai_search = getattr(settings, 'ai_search', False)
 from ..ai_recommendations import get_product_recommendations
-from ..utils import image_to_text_description, get_semantic_search_query # Import new utility
+from ..utils import get_semantic_search_query # Import new utility
 import uuid
 import math
 import os
@@ -18,165 +18,10 @@ import shutil
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-@router.post("/image-search")
-async def image_search(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    limit: int = Query(20, ge=1, le=100),
-):
-    """
-    Performs image-to-product search using color and visual analysis (NO LLM).
-    1. Extracts dominant colors from uploaded image
-    2. Searches products by matching colors in titles/descriptions
-    3. Returns visually similar products based on color palette
-    """
-    temp_file_path = None
-    try:
-        from PIL import Image
-        import colorsys
-        from collections import Counter
-        
-        # Save uploaded file temporarily
-        temp_dir = "uploads/temp"
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_file_path = os.path.join(temp_dir, f"search_{file.filename}")
-        
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Extract dominant colors using PIL
-        img = Image.open(temp_file_path)
-        img = img.convert('RGB')
-        img.thumbnail((150, 150))  # Reduce size for faster processing
-        
-        pixels = list(img.getdata())
-        
-        # Get most common colors
-        color_counter = Counter(pixels)
-        dominant_colors = color_counter.most_common(5)
-        
-        # Convert RGB to color names and keywords
-        def rgb_to_color_name(rgb):
-            """Convert RGB to approximate color name"""
-            r, g, b = [x/255.0 for x in rgb]
-            h, s, v = colorsys.rgb_to_hsv(r, g, b)
-            
-            # Determine color based on HSV
-            if v < 0.2:
-                return ["black", "dark"]
-            elif s < 0.1:
-                if v > 0.8:
-                    return ["white", "light"]
-                else:
-                    return ["gray", "grey"]
-            else:
-                # Determine hue-based color
-                hue_degree = h * 360
-                if hue_degree < 15 or hue_degree >= 345:
-                    return ["red", "crimson"]
-                elif 15 <= hue_degree < 45:
-                    return ["orange", "coral"]
-                elif 45 <= hue_degree < 75:
-                    return ["yellow", "gold", "golden"]
-                elif 75 <= hue_degree < 155:
-                    return ["green", "emerald"]
-                elif 155 <= hue_degree < 200:
-                    return ["cyan", "turquoise", "aqua"]
-                elif 200 <= hue_degree < 260:
-                    return ["blue", "navy"]
-                elif 260 <= hue_degree < 300:
-                    return ["purple", "violet"]
-                else:
-                    return ["pink", "magenta", "rose"]
-        
-        # Extract color keywords
-        color_keywords = set()
-        for color_rgb, count in dominant_colors[:3]:  # Top 3 colors
-            color_names = rgb_to_color_name(color_rgb)
-            color_keywords.update(color_names)
-        
-        # Build search query from colors
-        search_terms = list(color_keywords)
-        search_query = " ".join(search_terms)
-        
-        # Search products matching these color terms
-        all_products = crud.get_products(
-            db=db,
-            skip=0,
-            limit=200,  # Get more to filter
-            search=None,
-            semantic_search=None,
-            sort_by="created_at",
-            sort_order="desc"
-        )
-        
-        # Score products based on color keyword matches
-        scored_products = []
-        for product in all_products:
-            score = 0
-            text_to_search = f"{product.title} {product.description} {product.short_description}".lower()
-            
-            for keyword in color_keywords:
-                if keyword in text_to_search:
-                    score += 10
-            
-            if score > 0:
-                scored_products.append((product, score))
-        
-        # Sort by score and limit results
-        scored_products.sort(key=lambda x: x[1], reverse=True)
-        products = [p[0] for p in scored_products[:limit]]
-        
-        # If no color matches, return recent products
-        if not products:
-            products = all_products[:limit]
-        
-        # Convert to dict format
-        products_data = []
-        for product in products:
-            product_dict = {
-                "id": product.id,
-                "seller_id": product.seller_id,
-                "category_id": product.category_id,
-                "title": product.title,
-                "slug": product.slug,
-                "description": product.description,
-                "short_description": product.short_description,
-                "price": product.price,
-                "compare_price": product.compare_price,
-                "sku": product.sku,
-                "inventory_count": product.inventory_count,
-                "weight": product.weight,
-                "dimensions": product.dimensions,
-                "images": product.images,
-                "is_active": product.is_active,
-                "is_featured": product.is_featured,
-                "rating": product.rating,
-                "review_count": product.review_count,
-                "created_at": product.created_at.isoformat() if product.created_at else None,
-                "updated_at": product.updated_at.isoformat() if product.updated_at else None
-            }
-            products_data.append(product_dict)
-        
-        return {
-            "items": products_data,
-            "query": search_query,
-            "detected_colors": list(color_keywords),
-            "message": f"Found {len(products_data)} products matching detected colors: {', '.join(color_keywords)}"
-        }
-
-    except Exception as e:
-        print(f"Error in image_search: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error performing image search: {str(e)}")
-    finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except:
-                pass
+# Image search endpoint removed - image search feature has been deprecated and the related
+# utility moved/removed. If you need to re-enable image-based search, reintroduce a
+# purpose-built, tested module. For now, keep product endpoints focused on text-based
+# search and recommendations.
 
 
 @router.get("/")
