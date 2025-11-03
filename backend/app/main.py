@@ -39,26 +39,35 @@ app = FastAPI(
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# Allow CORS for frontend
-origins = [
+# ----------------------------------------------------------------
+# CORS configuration (important for Netlify frontend)
+# ----------------------------------------------------------------
+frontend_origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
     "http://localhost:5173",
     "http://localhost:3000",
-    "http://192.168.56.1:5173"  # Added local network IP
+    "http://192.168.56.1:5173"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=frontend_origins,  # ⚡ Must match your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
- )
+)
+
 # Trusted hosts
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "*.vercel.app", "*.onrender.com", "megamartcom.netlify.app"]
+    allowed_hosts=[
+        "localhost",
+        "127.0.0.1",
+        "*.vercel.app",
+        "*.onrender.com",
+        "megamartcom.netlify.app"
+    ]
 )
 
 # ----------------------------------------------------------------
@@ -69,7 +78,7 @@ os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # ----------------------------------------------------------------
-# Routers
+# Include routers
 # ----------------------------------------------------------------
 routers = [
     auth, products, cart, orders, categories, seller, admin,
@@ -80,7 +89,7 @@ routers = [
 for router in routers:
     app.include_router(router.router, prefix="/api/v1")
 
-# Mount websocket routes at root (no versioned prefix)
+# WebSocket router
 app.include_router(ws_messages.router)
 
 # ----------------------------------------------------------------
@@ -145,23 +154,12 @@ async def internal_error_handler(request: Request, exc):
 if __name__ == "__main__":
     import uvicorn
 
-    # Use Render-provided port, fallback for local dev
+    # Render provides a dynamic port, fallback to 8000 locally
     port = int(os.environ.get("PORT", 8000))
 
-    #  Ensure origins match what your frontend is using
-    origins = [
-        "https://megamartcom.netlify.app",
-        "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://192.168.56.1:5173"
-    ]
-    # Run the app with uvicorn for local development. Middleware is configured
-    # once above (so we avoid adding duplicate middleware here).
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=port,
         reload=settings.debug
     )
-
