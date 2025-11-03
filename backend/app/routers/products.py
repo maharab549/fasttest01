@@ -10,6 +10,7 @@ from ..config import settings
 ai_search = getattr(settings, 'ai_search', False)
 from ..ai_recommendations import get_product_recommendations
 from ..utils import image_to_text_description, get_semantic_search_query # Import new utility
+import uuid
 import math
 import os
 import shutil
@@ -422,8 +423,25 @@ def create_product(
     existing_product = db.query(crud.models.Product).filter(crud.models.Product.sku == product.sku).first()
     if existing_product:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
-    
-    return crud.create_product(db=db, product=product, seller_id=seller.id)
+    # Ensure images default to empty list if not provided
+    if getattr(product, 'images', None) is None:
+        # pydantic BaseModel is immutable by default when coming from request; create a dict copy
+        product_dict = product.dict()
+        product_dict['images'] = []
+    else:
+        product_dict = product.dict()
+
+    # Ensure slug exists; if not, generate a slug from the title + short uuid suffix
+    if not product_dict.get('slug'):
+        base_slug = (product_dict.get('title') or 'product').lower().strip().replace(' ', '-')
+        product_dict['slug'] = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
+    # Use crud.create_product with normalized dict -> construct a ProductCreate-like object
+    # crud.create_product expects a schemas.ProductCreate-like object, but it uses product.dict() internally
+    from pydantic import parse_obj_as
+    product_create_obj = parse_obj_as(schemas.ProductCreate, product_dict)
+
+    return crud.create_product(db=db, product=product_create_obj, seller_id=seller.id)
 
 
 @router.put("/{product_id}", response_model=schemas.Product)
@@ -533,13 +551,15 @@ def get_product_recommendations_endpoint(
 @router.post("/upload-image")
 def upload_product_image(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
     """Upload a product image (seller only)"""
     # Ensure the user is a seller
-    seller = crud.get_seller_by_user_id(db=Depends(get_db), user_id=current_user.id)
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=403, detail="Only sellers can upload images")
+
 
     # Define upload directory
     upload_dir = "uploads/products"

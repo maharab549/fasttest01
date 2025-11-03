@@ -2,6 +2,7 @@ try:
     import google.generativeai as genai
 except Exception:
     genai = None
+import requests
 try:
     from groq import Groq
 except Exception:
@@ -29,6 +30,14 @@ if GEMINI_API_KEY and genai is not None:
     except Exception as e:
         print(f"Failed to configure Gemini API: {e}")
         USE_GEMINI = False
+
+# If genai isn't available we can fall back to calling the Generative Language REST API
+# directly using the provided API key. We'll keep USE_GEMINI_REST True if we at least have
+# an API key and requests is available; later code will choose genai client first if
+# present, otherwise REST.
+USE_GEMINI_REST = False
+if GEMINI_API_KEY and genai is None:
+    USE_GEMINI_REST = True
 
 # Configure Groq if available
 GROQ_CLIENT = None
@@ -91,10 +100,87 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
     Returns:
         The chatbot's response.
     """
-    # Provider selection: Gemini -> Groq -> Fallback
-    if USE_GEMINI and GEMINI_API_KEY and genai is not None:
+    # Provider selection: SDK-first (try multiple SDK call shapes) -> REST Gemini -> Groq -> Fallback
+    system_instruction = (
+        "You are a sophisticated, helpful, and knowledgeable customer support assistant for a premium, luxury e-commerce marketplace. "
+        "Your tone is polite, professional, and elegant. "
+        "Your primary goal is to assist with product inquiries, order status, and general site navigation in a concise manner. "
+        "Always maintain the luxury brand voice. "
+        "If you are asked a question outside the scope of e-commerce or customer support, politely decline and redirect the user to a relevant shopping topic."
+    )
+
+    # 1) Try SDK if available (be tolerant of different SDK shapes/versions)
+    if genai is not None and GEMINI_API_KEY:
         try:
-            # 1. Define the system instruction for a luxury e-commerce assistant
+            # If SDK exposes a configure helper, call it safely
+            if hasattr(genai, "configure"):
+                try:
+                    genai.configure(api_key=GEMINI_API_KEY)
+                except Exception:
+                    # not critical; some SDKs accept the key per-call
+                    pass
+
+            # Variant A: genai.chat.completions.create (newer chat-style APIs)
+            chat_api = getattr(genai, "chat", None)
+            if chat_api is not None and hasattr(chat_api, "completions") and hasattr(chat_api.completions, "create"):
+                try:
+                    messages = [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": user_query},
+                    ]
+                    resp = genai.chat.completions.create(model="gemini-1.5", messages=messages, temperature=0.3)
+                    # resp may contain different shapes
+                    text = None
+                    if hasattr(resp, "output_text"):
+                        text = resp.output_text
+                    elif isinstance(resp, dict):
+                        # common dict shape
+                        choices = resp.get("choices") or resp.get("candidates")
+                        if choices and isinstance(choices, list):
+                            first = choices[0]
+                            if isinstance(first, dict):
+                                text = first.get("message") or first.get("content") or first.get("output") or first.get("text")
+                    if text:
+                        return text
+                except Exception:
+                    pass
+
+            # Variant B: genai.models.generate (text-generation style)
+            models_api = getattr(genai, "models", None)
+            if models_api is not None and hasattr(models_api, "generate"):
+                try:
+                    prompt = system_instruction + "\n\n" + user_query
+                    resp = genai.models.generate(model="gemini-1.5", prompt=[{"type":"text","text":prompt}], temperature=0.3, max_output_tokens=512)
+                    # extract text
+                    if isinstance(resp, dict):
+                        # candidates / output
+                        candidates = resp.get("candidates") or resp.get("outputs") or []
+                        if candidates and isinstance(candidates, list):
+                            first = candidates[0]
+                            text = first.get("content") or first.get("output") or first.get("text") if isinstance(first, dict) else None
+                            if text:
+                                return text
+                except Exception:
+                    pass
+
+            # Variant C: older pattern (GenerativeModel with start_chat)
+            if hasattr(genai, "GenerativeModel"):
+                try:
+                    model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system_instruction)
+                    chat = model.start_chat(history=[])
+                    response = chat.send_message(user_query, request_options={"timeout": 15})
+                    if hasattr(response, "text"):
+                        return response.text
+                except Exception:
+                    pass
+        except Exception as e:
+            # Fall through to REST/Groq/fallback
+            print(f"Gemini SDK attempt failed: {e}")
+
+    # If genai client not available, try REST endpoint
+    if USE_GEMINI_REST and GEMINI_API_KEY:
+        try:
+            # Build a simple prompt that includes a system instruction and recent conversation
             system_instruction = (
                 "You are a sophisticated, helpful, and knowledgeable customer support assistant for a premium, luxury e-commerce marketplace. "
                 "Your tone is polite, professional, and elegant. "
@@ -103,34 +189,59 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
                 "If you are asked a question outside the scope of e-commerce or customer support, politely decline and redirect the user to a relevant shopping topic."
             )
 
-            # 2. Get or create a chat session for the user
-            if session_id not in CHAT_SESSIONS:
-                model = genai.GenerativeModel(
-                    model_name="gemini-1.5-flash",
-                    system_instruction=system_instruction
-                )
-                chat = model.start_chat(history=[])
-                CHAT_SESSIONS[session_id] = {"provider": "gemini", "chat": chat}
-            else:
-                # If previous provider differs, reset to Gemini
-                if CHAT_SESSIONS[session_id].get("provider") != "gemini":
-                    model = genai.GenerativeModel(
-                        model_name="gemini-1.5-flash",
-                        system_instruction=system_instruction
-                    )
-                    chat = model.start_chat(history=[])
-                    CHAT_SESSIONS[session_id] = {"provider": "gemini", "chat": chat}
-                else:
-                    chat = CHAT_SESSIONS[session_id]["chat"]
+            # Maintain rolling history per session (system + last N messages)
+            history_msgs = CHAT_SESSIONS.get(session_id, {}).get("messages", [])
+            # Ensure system at start
+            if not history_msgs or history_msgs[0].get("role") != "system":
+                history_msgs = [{"role": "system", "content": system_instruction}]
 
-            response = chat.send_message(
-                user_query,
-                request_options={"timeout": 15}
-            )
-            return response.text
+            # Append user message
+            history_msgs.append({"role": "user", "content": user_query})
+
+            # Keep length reasonable
+            if len(history_msgs) > 15:
+                history_msgs = [history_msgs[0]] + history_msgs[-14:]
+
+            CHAT_SESSIONS[session_id] = {"provider": "gemini_rest", "messages": history_msgs}
+
+            # Flatten messages into a single prompt for generateText
+            prompt_parts = [str(m.get("content")) for m in history_msgs if m.get("content")]
+            prompt = "\n\n".join(prompt_parts)
+
+            # Choose a model name; this may be adjusted depending on availability
+            model = "gemini-1.5"
+            url = f"https://generativelanguage.googleapis.com/v1beta2/models/{model}:generateText?key={GEMINI_API_KEY}"
+
+            payload = {
+                "prompt": {"text": prompt},
+                "temperature": 0.3,
+                "maxOutputTokens": 512,
+            }
+
+            resp = requests.post(url, json=payload, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Attempt to extract text from common response shapes
+            text = None
+            if isinstance(data, dict):
+                candidates = data.get("candidates") or data.get("outputs") or []
+                if candidates and isinstance(candidates, list):
+                    first = candidates[0]
+                    text = first.get("content") or first.get("output") or first.get("text") or first.get("message")
+                if not text:
+                    text = data.get("output") or data.get("response") or None
+                    if isinstance(text, dict):
+                        text = text.get("content") or text.get("text")
+
+            if not text:
+                return get_fallback_response(user_query)
+
+            # Append assistant response to session history
+            CHAT_SESSIONS[session_id]["messages"].append({"role": "assistant", "content": text})
+            return text
         except Exception as e:
-            print(f"Error with Gemini API, trying Groq fallback: {e}")
-            # Clean up to avoid corrupted session
+            print(f"Error calling Gemini REST API, falling back: {e}")
             if session_id in CHAT_SESSIONS:
                 del CHAT_SESSIONS[session_id]
 

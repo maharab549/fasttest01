@@ -108,7 +108,9 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    images: List[str]
+    # images should be optional when creating a product from the frontend
+    # (frontend might upload images separately and provide zero or more image urls)
+    images: Optional[List[str]] = None
 
 
 class ProductUpdate(BaseModel):
