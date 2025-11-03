@@ -20,6 +20,14 @@ class UserLogin(BaseModel):
     password: str
 
 
+class ChatbotQuery(BaseModel):
+    message: str
+
+
+class ChatbotResponse(BaseModel):
+    response: str
+
+
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
@@ -125,6 +133,7 @@ class Product(ProductBase):
     is_featured: bool
     rating: float
     review_count: int
+    view_count: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     

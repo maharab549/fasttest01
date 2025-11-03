@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
-from .. import crud, schemas, auth
+from typing import List, Optional
+from .. import crud, schemas, auth, models
 from ..database import get_db
 from .notifications import create_notification
 
@@ -134,6 +134,20 @@ def update_order_status(
             related_order_id=updated_order.id
         )
 
+        # If order is delivered, also prompt the user to leave a review
+        if updated_order.status == "delivered":
+            create_notification(
+                db=db,
+                user_id=updated_order.user_id,
+                title=f"Order #{updated_order.order_number} Delivered",
+                message=(
+                    "Your order was delivered successfully. We'd love to hear your feedback — "
+                    "please leave a review for the items you received."
+                ),
+                notification_type="review_request",
+                related_order_id=updated_order.id
+            )
+
     return updated_order
 
 
@@ -172,4 +186,31 @@ def track_order(
         "updated_at": order.updated_at,
         "total_amount": order.total_amount
     }
+
+
+@router.get("/delivered", response_model=List[schemas.Order])
+@router.get("/delivered/", response_model=List[schemas.Order])
+def get_delivered_orders(
+    product_id: Optional[int] = Query(None, ge=1),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    """Get delivered orders for the current user. If product_id is provided,
+    only return delivered orders that contain that product.
+    """
+    query = db.query(models.Order).filter(
+        models.Order.user_id == current_user.id,
+        models.Order.status == "delivered"
+    )
+
+    if product_id is not None:
+        # Join with order items to ensure the order contains the product
+        query = query.join(models.OrderItem).filter(
+            models.OrderItem.product_id == product_id
+        )
+
+    orders = query.order_by(models.Order.created_at.desc()).offset(skip).limit(limit).all()
+    return orders
 

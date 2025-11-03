@@ -10,6 +10,9 @@ from app.config import settings
 
 def create_sample_data():
     """Create sample data for the marketplace"""
+    # Ensure all tables exist before seeding (safe to call repeatedly)
+    models.Base.metadata.create_all(bind=engine)
+
     db = SessionLocal()
     
     try:

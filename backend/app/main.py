@@ -10,7 +10,7 @@ from . import models
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages
+    sms, reviews, ws_messages, chatbot
 )
 from .ws_redis import bridge
 import os
@@ -45,11 +45,12 @@ origins = [
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://192.168.56.1:5173"  # Added local network IP
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Temporarily allow all origins to fix the issue
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,11 +74,14 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages
+    sms, reviews, chatbot
 ]
 
 for router in routers:
     app.include_router(router.router, prefix="/api/v1")
+
+# Mount websocket routes at root (no versioned prefix)
+app.include_router(ws_messages.router)
 
 # ----------------------------------------------------------------
 # Redis Bridge
@@ -146,3 +150,4 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.debug
     )
+

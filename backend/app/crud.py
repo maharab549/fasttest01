@@ -99,6 +99,7 @@ def get_products(
     skip: int = 0,
     limit: int = 20,
     search: Optional[str] = None,
+    semantic_search: Optional[str] = None,
     category_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -109,7 +110,10 @@ def get_products(
     
     # Apply filters
     if search:
-        query = query.filter(models.Product.title.ilike(f"%{search}%"))
+        if semantic_search:
+            query = query.filter(models.Product.title.ilike(f"%{semantic_search}%"))
+        elif search:
+            query = query.filter(models.Product.title.ilike(f"%{search}%"))
     
     if category_id:
         query = query.filter(models.Product.category_id == category_id)
@@ -169,6 +173,22 @@ def update_product(db: Session, product_id: int, product_update: schemas.Product
             setattr(db_product, field, value)
         db.commit()
         db.refresh(db_product)
+    return db_product
+
+
+def increment_product_view_count(db: Session, product_id: int) -> Optional[models.Product]:
+    """Increments the view_count for a product"""
+    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if db_product:
+        # Assuming 'view_count' field exists on models.Product
+        if hasattr(db_product, 'view_count'):
+            db_product.view_count += 1
+            db.commit()
+            db.refresh(db_product)
+        else:
+            # Log a warning if the field is missing, but continue
+            # In a real app, this would be a proper log, but here a print will suffice
+            print(f"Warning: 'view_count' attribute not found on product {product_id}. Skipping increment.")
     return db_product
 
 
@@ -340,6 +360,7 @@ def update_product_rating(db: Session, product_id: int):
 def count_products(
     db: Session,
     search: Optional[str] = None,
+    semantic_search: Optional[str] = None,
     category_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None
@@ -348,7 +369,10 @@ def count_products(
     query = db.query(models.Product).filter(models.Product.is_active == True)
     
     if search:
-        query = query.filter(models.Product.title.ilike(f"%{search}%"))
+        if semantic_search:
+            query = query.filter(models.Product.title.ilike(f"%{semantic_search}%"))
+        elif search:
+            query = query.filter(models.Product.title.ilike(f"%{search}%"))
     
     if category_id:
         query = query.filter(models.Product.category_id == category_id)

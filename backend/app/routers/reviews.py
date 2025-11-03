@@ -239,3 +239,20 @@ def update_review(
     
     return review
 
+
+@router.get("/user/{product_id}")
+@router.get("/user/{product_id}/")
+def get_user_product_review(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    """Get the current user's review for a specific product.
+    Returns the review object or null if no review exists.
+    """
+    review = db.query(models.Review).filter(
+        models.Review.user_id == current_user.id,
+        models.Review.product_id == product_id
+    ).first()
+    return review
+
