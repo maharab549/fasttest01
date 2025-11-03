@@ -144,10 +144,24 @@ async def internal_error_handler(request: Request, exc):
 # ----------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
+    # Use Render-provided port, fallback for local dev
+    port = int(os.environ.get("PORT", 8000))
+
+    #  Ensure origins match what your frontend is using
+    origins = [
+        "https://megamartcom.netlify.app",
+        "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://192.168.56.1:5173"
+    ]
+    # Run the app with uvicorn for local development. Middleware is configured
+    # once above (so we avoid adding duplicate middleware here).
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=settings.debug
     )
 
