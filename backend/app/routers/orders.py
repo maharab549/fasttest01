@@ -56,6 +56,20 @@ def create_order(
     # Clear cart after successful order
     crud.clear_cart(db=db, user_id=current_user.id)
     
+    # Award loyalty points for the purchase (1 point per dollar spent)
+    loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
+    if loyalty_account:
+        points_earned = int(db_order.total_amount)  # 1 point per dollar
+        crud.award_points(
+            db=db,
+            loyalty_account_id=loyalty_account.id,
+            points=points_earned,
+            source="purchase",
+            source_id=str(db_order.id),
+            description=f"Earned {points_earned} points from order #{db_order.order_number}",
+            metadata={"order_number": db_order.order_number, "order_amount": db_order.total_amount}
+        )
+    
     return db_order
 
 

@@ -30,6 +30,9 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     # Create user
     db_user = crud.create_user(db=db, user=user)
     
+    # Create loyalty account with signup bonus
+    crud.create_loyalty_account(db=db, user_id=db_user.id)
+    
     # If user is a seller, create seller profile
     if user.is_seller:
         seller_data = schemas.SellerCreate(
@@ -110,6 +113,50 @@ def update_profile(
             store_description=f"Welcome to {updated_user.full_name}\'s store!"
         )
         crud.create_seller(db=db, seller=seller_data, user_id=updated_user.id)
+    
+    return updated_user
+
+
+@router.post("/register-with-referral", response_model=schemas.User)
+def register_with_referral(
+    user: schemas.UserCreate,
+    referral_signup: schemas.ReferralSignup,
+    db: Session = Depends(get_db)
+):
+    """Register a new user with a referral code"""
+    # Check if user already exists
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    db_user = crud.get_user_by_username(db, username=user.username)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    
+    # Validate referral code
+    referrer_account = crud.get_loyalty_account_by_referral_code(db, referral_signup.referral_code)
+    if not referrer_account:
+        raise HTTPException(status_code=400, detail="Invalid referral code")
+    
+    # Create user
+    db_user = crud.create_user(db=db, user=user)
+    
+    # Create loyalty account with signup bonus
+    crud.create_loyalty_account(db=db, user_id=db_user.id)
+    
+    # Process referral (awards points to both referrer and new user)
+    crud.process_referral(db, referral_signup.referral_code, db_user.id)
+    
+    # If user is a seller, create seller profile
+    if user.is_seller:
+        seller_data = schemas.SellerCreate(
+            store_name=f"{user.full_name}'s Store",
+            store_slug=user.username.lower().replace(" ", "-"),
+            store_description=f"Welcome to {user.full_name}'s store!"
+        )
+        crud.create_seller(db=db, seller=seller_data, user_id=db_user.id)
+    
+    return db_user
 
     return updated_user
 

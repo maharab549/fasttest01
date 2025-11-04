@@ -182,7 +182,12 @@ def increment_product_view_count(db: Session, product_id: int) -> Optional[model
     if db_product:
         # Assuming 'view_count' field exists on models.Product
         if hasattr(db_product, 'view_count'):
-            db_product.view_count += 1
+            # Defensive: view_count may be None in some records/schema migrations.
+            # Treat None as 0 so += doesn't fail.
+            if db_product.view_count is None:
+                db_product.view_count = 1
+            else:
+                db_product.view_count += 1
             db.commit()
             db.refresh(db_product)
         else:
@@ -384,4 +389,405 @@ def count_products(
         query = query.filter(models.Product.price <= max_price)
     
     return query.count()
+
+
+# Return CRUD
+def create_return(db: Session, return_data: schemas.ReturnCreate, user_id: int) -> models.Return:
+    """Create a new return request"""
+    # Generate unique return number
+    return_number = f"RET-{uuid.uuid4().hex[:8].upper()}"
+    
+    # Get the order to calculate refund amount
+    order = db.query(models.Order).filter(models.Order.id == return_data.order_id).first()
+    if not order:
+        raise ValueError("Order not found")
+    
+    # Calculate refund amount based on return items
+    refund_amount = 0.0
+    for item in return_data.items:
+        order_item = db.query(models.OrderItem).filter(models.OrderItem.id == item.order_item_id).first()
+        if order_item:
+            refund_amount += order_item.unit_price * item.quantity
+    
+    # Create return request
+    db_return = models.Return(
+        return_number=return_number,
+        order_id=return_data.order_id,
+        user_id=user_id,
+        reason=return_data.reason,
+        reason_details=return_data.reason_details,
+        refund_amount=refund_amount,
+        refund_method=return_data.refund_method,
+        status="initiated"
+    )
+    db.add(db_return)
+    db.commit()
+    db.refresh(db_return)
+    
+    # Create return items
+    for item in return_data.items:
+        return_item = models.ReturnItem(
+            return_id=db_return.id,
+            order_item_id=item.order_item_id,
+            product_id=item.product_id,
+            quantity=item.quantity,
+            reason=item.reason,
+            condition=item.condition,
+            images=item.images
+        )
+        db.add(return_item)
+    
+    db.commit()
+    db.refresh(db_return)
+    return db_return
+
+
+def get_returns_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100) -> List[models.Return]:
+    """Get all returns for a user"""
+    return db.query(models.Return)\
+             .filter(models.Return.user_id == user_id)\
+             .options(joinedload(models.Return.return_items))\
+             .offset(skip).limit(limit).all()
+
+
+def get_return(db: Session, return_id: int) -> Optional[models.Return]:
+    """Get a single return by ID"""
+    return db.query(models.Return)\
+             .filter(models.Return.id == return_id)\
+             .options(joinedload(models.Return.return_items))\
+             .first()
+
+
+def get_return_by_number(db: Session, return_number: str) -> Optional[models.Return]:
+    """Get a single return by return number"""
+    return db.query(models.Return)\
+             .filter(models.Return.return_number == return_number)\
+             .options(joinedload(models.Return.return_items))\
+             .first()
+
+
+def update_return_status(db: Session, return_id: int, status: str, admin_notes: Optional[str] = None) -> Optional[models.Return]:
+    """Update return status"""
+    db_return = db.query(models.Return).filter(models.Return.id == return_id).first()
+    if db_return:
+        db_return.status = status
+        if admin_notes:
+            db_return.admin_notes = admin_notes
+        
+        # If status is refunded, update refund date and status
+        if status == "refunded" or status == "completed":
+            db_return.refund_status = "completed"
+            if not db_return.refund_date:
+                db_return.refund_date = datetime.now()
+        
+        db.commit()
+        db.refresh(db_return)
+    return db_return
+
+
+def update_return(db: Session, return_id: int, return_update: schemas.ReturnUpdate) -> Optional[models.Return]:
+    """Update return details"""
+    db_return = db.query(models.Return).filter(models.Return.id == return_id).first()
+    if db_return:
+        update_data = return_update.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(db_return, field, value)
+        
+        db.commit()
+        db.refresh(db_return)
+    return db_return
+
+
+def get_all_returns(db: Session, skip: int = 0, limit: int = 100) -> List[models.Return]:
+    """Get all returns (for admin)"""
+    return db.query(models.Return)\
+             .options(joinedload(models.Return.return_items))\
+             .offset(skip).limit(limit).all()
+
+
+
+
+# Loyalty & Rewards CRUD
+def create_reward_tier(db: Session, tier: schemas.RewardTierCreate) -> models.RewardTier:
+    """Create a new reward tier"""
+    db_tier = models.RewardTier(**tier.dict())
+    db.add(db_tier)
+    db.commit()
+    db.refresh(db_tier)
+    return db_tier
+
+
+def get_reward_tiers(db: Session) -> List[models.RewardTier]:
+    """Get all reward tiers ordered by min_points"""
+    return db.query(models.RewardTier).order_by(models.RewardTier.min_points).all()
+
+
+def get_reward_tier(db: Session, tier_id: int) -> Optional[models.RewardTier]:
+    """Get a specific reward tier"""
+    return db.query(models.RewardTier).filter(models.RewardTier.id == tier_id).first()
+
+
+def get_tier_for_points(db: Session, points: int) -> Optional[models.RewardTier]:
+    """Get the appropriate tier for a points balance"""
+    return db.query(models.RewardTier)\
+        .filter(models.RewardTier.min_points <= points)\
+        .filter(or_(models.RewardTier.max_points >= points, models.RewardTier.max_points == None))\
+        .order_by(desc(models.RewardTier.min_points))\
+        .first()
+
+
+def create_loyalty_account(db: Session, user_id: int) -> models.LoyaltyAccount:
+    """Create a loyalty account for a new user"""
+    # Generate unique referral code
+    referral_code = f"{uuid.uuid4().hex[:8].upper()}"
+    
+    db_account = models.LoyaltyAccount(
+        user_id=user_id,
+        referral_code=referral_code,
+        points_balance=0,
+        lifetime_points=0,
+        tier_id=None
+    )
+    db.add(db_account)
+    db.commit()
+    db.refresh(db_account)
+    
+    # Award signup bonus
+    award_points(
+        db=db,
+        loyalty_account_id=db_account.id,
+        points=100,
+        source="signup_bonus",
+        description="Welcome bonus for joining!"
+    )
+    
+    return db_account
+
+
+def get_loyalty_account_by_user(db: Session, user_id: int) -> Optional[models.LoyaltyAccount]:
+    """Get loyalty account for a user"""
+    return db.query(models.LoyaltyAccount)\
+        .options(joinedload(models.LoyaltyAccount.tier))\
+        .filter(models.LoyaltyAccount.user_id == user_id)\
+        .first()
+
+
+def get_loyalty_account_by_referral_code(db: Session, referral_code: str) -> Optional[models.LoyaltyAccount]:
+    """Get loyalty account by referral code"""
+    return db.query(models.LoyaltyAccount)\
+        .filter(models.LoyaltyAccount.referral_code == referral_code)\
+        .first()
+
+
+def award_points(
+    db: Session,
+    loyalty_account_id: int,
+    points: int,
+    source: str,
+    source_id: Optional[str] = None,
+    description: Optional[str] = None,
+    metadata: Optional[dict] = None
+) -> models.PointsTransaction:
+    """Award points to a loyalty account"""
+    account = db.query(models.LoyaltyAccount).filter(models.LoyaltyAccount.id == loyalty_account_id).first()
+    if not account:
+        raise ValueError("Loyalty account not found")
+    
+    # Apply tier multiplier if account has a tier
+    if account.tier and account.tier.points_multiplier:
+        points = int(points * account.tier.points_multiplier)
+    
+    # Update account balance
+    account.points_balance += points
+    account.lifetime_points += points
+    
+    # Check if tier upgrade is needed
+    new_tier = get_tier_for_points(db, account.lifetime_points)
+    if new_tier and (not account.tier_id or new_tier.id != account.tier_id):
+        account.tier_id = new_tier.id
+    
+    # Create transaction record
+    transaction = models.PointsTransaction(
+        loyalty_account_id=loyalty_account_id,
+        transaction_type="earn",
+        points_change=points,
+        points_balance_after=account.points_balance,
+        source=source,
+        source_id=source_id,
+        description=description or f"Earned {points} points from {source}",
+        extra_data=metadata
+    )
+    
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+    db.refresh(account)
+    
+    return transaction
+
+
+def deduct_points(
+    db: Session,
+    loyalty_account_id: int,
+    points: int,
+    source: str,
+    source_id: Optional[str] = None,
+    description: Optional[str] = None
+) -> models.PointsTransaction:
+    """Deduct points from a loyalty account"""
+    account = db.query(models.LoyaltyAccount).filter(models.LoyaltyAccount.id == loyalty_account_id).first()
+    if not account:
+        raise ValueError("Loyalty account not found")
+    
+    if account.points_balance < points:
+        raise ValueError("Insufficient points balance")
+    
+    # Update account balance
+    account.points_balance -= points
+    
+    # Create transaction record
+    transaction = models.PointsTransaction(
+        loyalty_account_id=loyalty_account_id,
+        transaction_type="redeem",
+        points_change=-points,
+        points_balance_after=account.points_balance,
+        source=source,
+        source_id=source_id,
+        description=description or f"Redeemed {points} points for {source}"
+    )
+    
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+    db.refresh(account)
+    
+    return transaction
+
+
+def get_points_transactions(
+    db: Session,
+    loyalty_account_id: int,
+    skip: int = 0,
+    limit: int = 50
+) -> List[models.PointsTransaction]:
+    """Get transaction history for a loyalty account"""
+    return db.query(models.PointsTransaction)\
+        .filter(models.PointsTransaction.loyalty_account_id == loyalty_account_id)\
+        .order_by(desc(models.PointsTransaction.created_at))\
+        .offset(skip).limit(limit).all()
+
+
+def create_redemption(
+    db: Session,
+    loyalty_account_id: int,
+    redemption_data: schemas.RedemptionCreate
+) -> models.Redemption:
+    """Create a redemption and deduct points"""
+    from datetime import timedelta
+    
+    # Deduct points
+    deduct_points(
+        db=db,
+        loyalty_account_id=loyalty_account_id,
+        points=redemption_data.points_redeemed,
+        source=redemption_data.redemption_type,
+        description=f"Redeemed {redemption_data.points_redeemed} points for {redemption_data.redemption_type}"
+    )
+    
+    # Generate reward code
+    reward_code = f"{redemption_data.redemption_type[:4].upper()}-{uuid.uuid4().hex[:8].upper()}"
+    
+    # Create redemption record
+    redemption = models.Redemption(
+        loyalty_account_id=loyalty_account_id,
+        redemption_type=redemption_data.redemption_type,
+        points_redeemed=redemption_data.points_redeemed,
+        reward_value=redemption_data.reward_value,
+        reward_code=reward_code,
+        status="active",
+        expires_at=datetime.now() + timedelta(days=90)  # 90 days expiry
+    )
+    
+    db.add(redemption)
+    db.commit()
+    db.refresh(redemption)
+    
+    return redemption
+
+
+def get_redemptions(
+    db: Session,
+    loyalty_account_id: int,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50
+) -> List[models.Redemption]:
+    """Get redemptions for a loyalty account"""
+    query = db.query(models.Redemption)\
+        .filter(models.Redemption.loyalty_account_id == loyalty_account_id)
+    
+    if status:
+        query = query.filter(models.Redemption.status == status)
+    
+    return query.order_by(desc(models.Redemption.created_at))\
+        .offset(skip).limit(limit).all()
+
+
+def use_redemption(db: Session, redemption_id: int, order_id: Optional[int] = None) -> models.Redemption:
+    """Mark a redemption as used"""
+    redemption = db.query(models.Redemption).filter(models.Redemption.id == redemption_id).first()
+    if not redemption:
+        raise ValueError("Redemption not found")
+    
+    if redemption.status != "active":
+        raise ValueError("Redemption is not active")
+    
+    if redemption.expires_at and redemption.expires_at < datetime.now():
+        raise ValueError("Redemption has expired")
+    
+    redemption.status = "used"
+    redemption.used_at = datetime.now()
+    if order_id:
+        redemption.order_id = order_id
+    
+    db.commit()
+    db.refresh(redemption)
+    
+    return redemption
+
+
+def process_referral(db: Session, referral_code: str, new_user_id: int) -> bool:
+    """Process a referral when a new user signs up"""
+    # Get referrer's loyalty account
+    referrer_account = get_loyalty_account_by_referral_code(db, referral_code)
+    if not referrer_account:
+        return False
+    
+    # Award points to referrer
+    award_points(
+        db=db,
+        loyalty_account_id=referrer_account.id,
+        points=500,  # Referrer gets 500 points
+        source="referral",
+        source_id=str(new_user_id),
+        description=f"Referred a new user"
+    )
+    
+    # Increment referral count
+    referrer_account.referrals_count += 1
+    db.commit()
+    
+    # Award bonus points to new user
+    new_user_account = get_loyalty_account_by_user(db, new_user_id)
+    if new_user_account:
+        award_points(
+            db=db,
+            loyalty_account_id=new_user_account.id,
+            points=200,  # New user gets 200 points
+            source="referral",
+            source_id=str(referrer_account.user_id),
+            description=f"Signup bonus from referral"
+        )
+    
+    return True
 

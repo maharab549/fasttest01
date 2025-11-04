@@ -10,7 +10,7 @@ from . import models
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages, chatbot
+    sms, reviews, ws_messages, chatbot, returns, loyalty
 )
 from .ws_redis import bridge
 import os
@@ -83,7 +83,7 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, chatbot
+    sms, reviews, chatbot, returns, loyalty
 ]
 
 for router in routers:
@@ -127,7 +127,7 @@ def health_check():
 
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):
-    client_host = request.client.host
+    client_host = request.client.host if request.client else "unknown"
     scheme = request.url.scheme
     return {
         "status": "success",
@@ -144,9 +144,26 @@ async def test_frontend(request: Request):
 async def not_found_handler(request: Request, exc):
     return JSONResponse(status_code=404, content={"detail": "Endpoint not found"})
 
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    import traceback
+    print("=" * 80)
+    print(f"UNHANDLED EXCEPTION on {request.method} {request.url.path}:")
+    print(traceback.format_exc())
+    print("=" * 80)
+    return JSONResponse(
+        status_code=500, 
+        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__}
+    )
+
 @app.exception_handler(500)
 async def internal_error_handler(request: Request, exc):
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    import traceback
+    print("=" * 80)
+    print("500 INTERNAL SERVER ERROR:")
+    print(traceback.format_exc())
+    print("=" * 80)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
 
 # ----------------------------------------------------------------
 # Entry point

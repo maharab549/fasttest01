@@ -136,6 +136,59 @@ class OrderItem(Base):
     product = relationship("Product", back_populates="order_items")
 
 
+class Return(Base):
+    __tablename__ = "returns"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    return_number = Column(String, unique=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String, default="initiated")  # initiated, approved, rejected, shipped, received, refunded, completed
+    reason = Column(String, nullable=False)  # defective, wrong_item, not_as_described, changed_mind, other
+    reason_details = Column(Text, nullable=True)
+    
+    # Refund Information
+    refund_amount = Column(Float, nullable=False)
+    refund_method = Column(String, default="original")  # original, store_credit
+    refund_status = Column(String, default="pending")  # pending, processing, completed, failed
+    refund_date = Column(DateTime(timezone=True), nullable=True)
+    
+    # Shipping Information
+    shipping_label_url = Column(String, nullable=True)
+    tracking_number = Column(String, nullable=True)
+    shipped_date = Column(DateTime(timezone=True), nullable=True)
+    received_date = Column(DateTime(timezone=True), nullable=True)
+    
+    # Admin notes
+    admin_notes = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    order = relationship("Order")
+    return_items = relationship("ReturnItem", back_populates="return_request")
+
+
+class ReturnItem(Base):
+    __tablename__ = "return_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    return_id = Column(Integer, ForeignKey("returns.id"), nullable=False)
+    order_item_id = Column(Integer, ForeignKey("order_items.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    reason = Column(String, nullable=True)  # Specific reason for this item
+    condition = Column(String, nullable=True)  # unopened, used, damaged
+    images = Column(JSON, nullable=True)  # Photos of the item/issue
+    
+    # Relationships
+    return_request = relationship("Return", back_populates="return_items")
+    order_item = relationship("OrderItem")
+    product = relationship("Product")
+
+
 class CartItem(Base):
     __tablename__ = "cart_items"
     
@@ -252,3 +305,84 @@ class SMSMessage(Base):
     
     # Relationships
     sender = relationship("User")
+
+
+
+
+class RewardTier(Base):
+    __tablename__ = "reward_tiers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)  # Bronze, Silver, Gold, Platinum
+    min_points = Column(Integer, nullable=False, default=0)
+    max_points = Column(Integer, nullable=True)  # Null for highest tier
+    benefits = Column(JSON, nullable=True)  # {"discount_percentage": 5, "free_shipping": true}
+    points_multiplier = Column(Float, default=1.0)  # Earn points faster at higher tiers
+    icon = Column(String, nullable=True)
+    color = Column(String, nullable=True)  # Hex color for UI
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
+
+class LoyaltyAccount(Base):
+    __tablename__ = "loyalty_accounts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    points_balance = Column(Integer, default=0)
+    lifetime_points = Column(Integer, default=0)  # Total points ever earned
+    tier_id = Column(Integer, ForeignKey("reward_tiers.id"), nullable=True)
+    referral_code = Column(String, unique=True, index=True, nullable=False)
+    referrals_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    tier = relationship("RewardTier")
+    transactions = relationship("PointsTransaction", back_populates="loyalty_account")
+    redemptions = relationship("Redemption", back_populates="loyalty_account")
+
+
+
+
+class PointsTransaction(Base):
+    __tablename__ = "points_transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    loyalty_account_id = Column(Integer, ForeignKey("loyalty_accounts.id"), nullable=False)
+    transaction_type = Column(String, nullable=False)  # earn, redeem, expire, adjustment
+    points_change = Column(Integer, nullable=False)  # Positive for earn, negative for spend
+    points_balance_after = Column(Integer, nullable=False)
+    source = Column(String, nullable=False)  # purchase, review, referral, signup_bonus, admin_adjustment
+    source_id = Column(String, nullable=True)  # Order ID, Review ID, etc.
+    description = Column(String, nullable=True)
+    extra_data = Column(JSON, nullable=True)  # Additional context (renamed from metadata)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # For expiring points
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    loyalty_account = relationship("LoyaltyAccount", back_populates="transactions")
+
+
+
+
+class Redemption(Base):
+    __tablename__ = "redemptions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    loyalty_account_id = Column(Integer, ForeignKey("loyalty_accounts.id"), nullable=False)
+    redemption_type = Column(String, nullable=False)  # discount_code, free_shipping, gift_card, cashback
+    points_redeemed = Column(Integer, nullable=False)
+    reward_value = Column(Float, nullable=False)  # Monetary value or percentage
+    reward_code = Column(String, unique=True, nullable=True)  # Discount/gift card code
+    status = Column(String, default="active")  # active, used, expired, cancelled
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)  # If applied to an order
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    loyalty_account = relationship("LoyaltyAccount", back_populates="redemptions")
+    order = relationship("Order")

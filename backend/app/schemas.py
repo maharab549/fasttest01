@@ -331,3 +331,186 @@ class Notification(NotificationBase):
     
     class Config:
         from_attributes = True
+
+
+# Return Schemas
+class ReturnItemBase(BaseModel):
+    order_item_id: int
+    product_id: int
+    quantity: int
+    reason: Optional[str] = None
+    condition: Optional[str] = None  # unopened, used, damaged
+    images: Optional[List[str]] = None
+
+
+class ReturnItemCreate(ReturnItemBase):
+    pass
+
+
+class ReturnItem(ReturnItemBase):
+    id: int
+    return_id: int
+    
+    class Config:
+        from_attributes = True
+
+
+class ReturnBase(BaseModel):
+    order_id: int
+    reason: str  # defective, wrong_item, not_as_described, changed_mind, other
+    reason_details: Optional[str] = None
+    refund_method: str = "original"  # original, store_credit
+
+
+class ReturnCreate(ReturnBase):
+    items: List[ReturnItemCreate]
+
+
+class ReturnUpdate(BaseModel):
+    status: Optional[str] = None
+    refund_status: Optional[str] = None
+    admin_notes: Optional[str] = None
+    shipping_label_url: Optional[str] = None
+    tracking_number: Optional[str] = None
+
+
+class Return(ReturnBase):
+    id: int
+    return_number: str
+    user_id: int
+    status: str
+    refund_amount: float
+    refund_status: str
+    refund_date: Optional[datetime] = None
+    shipping_label_url: Optional[str] = None
+    tracking_number: Optional[str] = None
+    shipped_date: Optional[datetime] = None
+    received_date: Optional[datetime] = None
+    admin_notes: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    return_items: List[ReturnItem] = []
+    
+    class Config:
+        from_attributes = True
+
+
+
+
+# Loyalty & Rewards Schemas
+class RewardTierBase(BaseModel):
+    name: str
+    min_points: int
+    max_points: Optional[int] = None
+    benefits: Optional[Dict[str, Any]] = None
+    points_multiplier: float = 1.0
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class RewardTierCreate(RewardTierBase):
+    pass
+
+
+class RewardTier(RewardTierBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class LoyaltyAccountBase(BaseModel):
+    points_balance: int = 0
+    lifetime_points: int = 0
+    referrals_count: int = 0
+
+
+class LoyaltyAccountCreate(BaseModel):
+    user_id: int
+
+
+class LoyaltyAccount(LoyaltyAccountBase):
+    id: int
+    user_id: int
+    tier_id: Optional[int] = None
+    referral_code: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    tier: Optional[RewardTier] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class PointsTransactionBase(BaseModel):
+    transaction_type: str  # earn, redeem, expire, adjustment
+    points_change: int
+    source: str  # purchase, review, referral, signup_bonus, admin_adjustment
+    source_id: Optional[str] = None
+    description: Optional[str] = None
+    extra_data: Optional[Dict[str, Any]] = None
+
+
+class PointsTransactionCreate(PointsTransactionBase):
+    loyalty_account_id: int
+    points_balance_after: int
+
+
+class PointsTransaction(PointsTransactionBase):
+    id: int
+    loyalty_account_id: int
+    points_balance_after: int
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class RedemptionBase(BaseModel):
+    redemption_type: str  # discount_code, free_shipping, gift_card, cashback
+    points_redeemed: int
+    reward_value: float
+
+
+class RedemptionCreate(RedemptionBase):
+    pass
+
+
+class RedemptionUpdate(BaseModel):
+    status: Optional[str] = None
+    used_at: Optional[datetime] = None
+
+
+class Redemption(RedemptionBase):
+    id: int
+    loyalty_account_id: int
+    reward_code: Optional[str] = None
+    status: str
+    order_id: Optional[int] = None
+    expires_at: Optional[datetime] = None
+    used_at: Optional[datetime] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class PointsEarnRequest(BaseModel):
+    source: str
+    source_id: Optional[str] = None
+    points: int
+    description: Optional[str] = None
+
+
+class ReferralSignup(BaseModel):
+    referral_code: str
+
+
+class LoyaltyDashboard(BaseModel):
+    account: LoyaltyAccount
+    recent_transactions: List[PointsTransaction]
+    active_redemptions: List[Redemption]
+    next_tier: Optional[RewardTier] = None
+    points_to_next_tier: Optional[int] = None

@@ -136,6 +136,19 @@ def create_review(
     # Update product rating
     crud.update_product_rating(db=db, product_id=review.product_id)
     
+    # Award loyalty points for writing a review (50 points)
+    loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
+    if loyalty_account:
+        crud.award_points(
+            db=db,
+            loyalty_account_id=loyalty_account.id,
+            points=50,
+            source="review",
+            source_id=str(db_review.id),
+            description=f"Earned 50 points for reviewing a product",
+            metadata={"product_id": review.product_id, "rating": review.rating}
+        )
+    
     return db_review
 
 
