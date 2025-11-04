@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=D:\All github project\Website final fix credit kinsi bashaar final code\project_work_fixed-lasttime credit kinlam avr\project_work_final_v3\backend\backend\venv
+set VIRTUAL_ENV=D:\All github project\fasttest01\backend\venv
 
 if not defined PROMPT set PROMPT=$P$G
 

@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from .. import crud, schemas, auth
+from .. import crud, schemas, auth, models
+from typing import cast
 from ..database import get_db
 
 router = APIRouter(prefix="/cart", tags=["cart"])
 
 
+# Support both trailing and non-trailing slash to avoid browser CORS issues on redirects
 @router.get("/", response_model=List[schemas.CartItem])
+@router.get("", response_model=List[schemas.CartItem])
 def get_cart(
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user)
@@ -30,14 +33,18 @@ def add_to_cart(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Check if product is active
-    if not product.is_active:
+    product_typed = cast(models.Product, product)
+    # Help type checker: explicitly cast SQLAlchemy-mapped attributes to Python types
+    is_active = cast(bool, product_typed.is_active)
+    if is_active is False:
         raise HTTPException(status_code=400, detail="Product is not available")
     
     # Check inventory
-    if cart_item.quantity > product.inventory_count:
+    inventory = cast(int, product_typed.inventory_count)
+    if cart_item.quantity > inventory:
         raise HTTPException(
             status_code=400,
-            detail=f"Only {product.inventory_count} items available in stock"
+            detail=f"Only {inventory} items available in stock"
         )
     
     return crud.add_to_cart(
@@ -62,10 +69,12 @@ def update_cart_item(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Check inventory if increasing quantity
-    if quantity > 0 and quantity > product.inventory_count:
+    product_typed = cast(models.Product, product)
+    inventory = cast(int, product_typed.inventory_count)
+    if quantity > 0 and quantity > inventory:
         raise HTTPException(
             status_code=400,
-            detail=f"Only {product.inventory_count} items available in stock"
+            detail=f"Only {inventory} items available in stock"
         )
     
     cart_item = crud.update_cart_item(
@@ -101,6 +110,7 @@ def remove_from_cart(
 
 
 @router.delete("/", response_model=schemas.MessageResponse)
+@router.delete("", response_model=schemas.MessageResponse)
 def clear_cart(
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user)

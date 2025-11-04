@@ -144,6 +144,11 @@ async def test_frontend(request: Request):
 async def not_found_handler(request: Request, exc):
     return JSONResponse(status_code=404, content={"detail": "Endpoint not found"})
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Preserve original HTTPException status codes (e.g., 401/403) instead of converting to 500."""
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     import traceback

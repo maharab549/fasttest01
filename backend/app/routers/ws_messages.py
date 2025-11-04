@@ -5,6 +5,7 @@ from ..database import SessionLocal
 from .. import auth, crud
 from ..ws_manager import manager
 import logging
+from typing import cast
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -16,7 +17,8 @@ def get_user_from_token(token: str):
     token_data = auth.verify_token(token, credentials_exception)
     db = SessionLocal()
     try:
-        user = crud.get_user_by_username(db, token_data.username)
+        username = cast(str, token_data.username)
+        user = crud.get_user_by_username(db, username)
         return user
     finally:
         db.close()
@@ -26,20 +28,23 @@ def get_user_from_token(token: str):
 async def websocket_messages(websocket: WebSocket, token: str = Query(None)):
     """WebSocket endpoint expects an access token as query param `token`"""
     if not token:
+        logger.warning("WS connection rejected: missing token")
         await websocket.close(code=1008)
         return
 
     try:
         user = get_user_from_token(token)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"WS token verification failed: {e}")
         await websocket.close(code=1008)
         return
 
     if not user:
+        logger.warning("WS connection rejected: user not found from token")
         await websocket.close(code=1008)
         return
 
-    user_id = user.id
+    user_id = cast(int, user.id)
     await manager.connect(user_id, websocket)
     logger.info(f"User {user_id} connected to websocket")
     try:

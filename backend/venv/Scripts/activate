@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="D:\All github project\Website final fix credit kinsi bashaar final code\project_work_fixed-lasttime credit kinlam avr\project_work_final_v3\backend\backend\venv"
+VIRTUAL_ENV="D:\All github project\fasttest01\backend\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
