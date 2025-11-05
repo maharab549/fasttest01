@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from .. import crud, schemas, auth
@@ -101,13 +101,15 @@ def get_products(
         raise HTTPException(status_code=500, detail=f"Error fetching products: {str(e)}")
 
 
+@router.get("/featured/")
 @router.get("/featured")
 def get_featured_products(limit: int = Query(8, ge=1, le=20), db: Session = Depends(get_db)):
     """Get featured products"""
     try:
         products = db.query(crud.models.Product).filter(
             crud.models.Product.is_featured == True,
-            crud.models.Product.is_active == True
+            crud.models.Product.is_active == True,
+            crud.models.Product.approval_status == "approved"
         ).limit(limit).all()
         
         # Convert products to dict format
@@ -220,6 +222,7 @@ def search_products(
 
 
 @router.get("/{product_id}", response_model=schemas.Product)
+@router.get("/{product_id}/", response_model=schemas.Product)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     """Get product by ID"""
     product = crud.get_product(db=db, product_id=product_id)
@@ -229,6 +232,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/slug/{slug}", response_model=schemas.Product)
+@router.get("/slug/{slug}/", response_model=schemas.Product)
 def get_product_by_slug(slug: str, db: Session = Depends(get_db)):
     """Get product by slug"""
     product = crud.get_product_by_slug(db=db, slug=slug)
@@ -253,8 +257,8 @@ def track_product_view(slug: str, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=schemas.Product)
-def create_product(
-    product: schemas.ProductCreate,
+async def create_product(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
@@ -264,35 +268,118 @@ def create_product(
     if not seller:
         raise HTTPException(status_code=400, detail="Seller profile not found")
     
+    # Parse payload (support JSON or multipart/form-data)
+    product_dict: Dict[str, Any]
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        def _to_float(val):
+            try:
+                return float(val) if val not in (None, "", []) else None
+            except Exception:
+                return None
+        def _to_int(val):
+            try:
+                return int(val) if val not in (None, "", []) else None
+            except Exception:
+                return None
+        product_dict = {
+            "title": form.get("title"),
+            "description": form.get("description"),
+            "short_description": form.get("short_description"),
+            "price": _to_float(form.get("price")),
+            "compare_price": _to_float(form.get("compare_price")),
+            "sku": form.get("sku"),
+            "inventory_count": _to_int(form.get("inventory_count")) or 0,
+            "weight": _to_float(form.get("weight")),
+            # dimensions could be JSON string
+            "dimensions": None,
+            "images": None,
+            "category_id": _to_int(form.get("category_id")),
+            "slug": form.get("slug") or None,
+        }
+        dims = form.get("dimensions")
+        if dims:
+            try:
+                import json
+                product_dict["dimensions"] = json.loads(str(dims))
+            except Exception:
+                product_dict["dimensions"] = None
+        imgs = form.get("images")
+        if imgs:
+            try:
+                import json
+                product_dict["images"] = json.loads(str(imgs))
+            except Exception:
+                # allow comma-separated urls
+                product_dict["images"] = [s.strip() for s in str(imgs).split(",") if s.strip()]
+    else:
+        try:
+            product_dict = await request.json()
+        except Exception:
+            product_dict = {}
+
+    # Normalize alternate frontend keys
+    # Support 'name' -> 'title', 'stock' -> 'inventory_count', 'image' -> 'images'
+    if product_dict.get('title') is None and product_dict.get('name'):
+        product_dict['title'] = product_dict.get('name')
+    if product_dict.get('inventory_count') is None and product_dict.get('stock') is not None:
+        try:
+            product_dict['inventory_count'] = int(product_dict.get('stock'))
+        except Exception:
+            product_dict['inventory_count'] = 0
+    if product_dict.get('images') is None and product_dict.get('image'):
+        img = product_dict.get('image')
+        product_dict['images'] = [img] if isinstance(img, str) else img
+    # Coerce numeric strings from JSON
+    for key in ('price','compare_price','weight'):
+        if key in product_dict and isinstance(product_dict[key], str):
+            try:
+                product_dict[key] = float(product_dict[key]) if product_dict[key] != '' else None
+            except Exception:
+                product_dict[key] = None
+    for key in ('inventory_count','category_id'):
+        if key in product_dict and isinstance(product_dict[key], str):
+            try:
+                product_dict[key] = int(product_dict[key]) if product_dict[key] != '' else None
+            except Exception:
+                product_dict[key] = None
+
+    # Validate against input schema
+    from pydantic import ValidationError, parse_obj_as
+    try:
+        input_obj = parse_obj_as(schemas.ProductCreateInput, product_dict)
+    except ValidationError as ve:
+        raise HTTPException(status_code=422, detail=ve.errors())
+
     # Check if product with same SKU exists
-    existing_product = db.query(crud.models.Product).filter(crud.models.Product.sku == product.sku).first()
+    # Auto-generate SKU if missing
+    if not input_obj.sku:
+        input_obj.sku = f"SKU-{uuid.uuid4().hex[:8].upper()}"
+    existing_product = db.query(crud.models.Product).filter(crud.models.Product.sku == input_obj.sku).first()
     if existing_product:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
-    # Ensure images default to empty list if not provided
-    if getattr(product, 'images', None) is None:
-        # pydantic BaseModel is immutable by default when coming from request; create a dict copy
-        product_dict = product.dict()
+    # Normalize payload and provide defaults
+    product_dict = input_obj.dict()
+    if product_dict.get('images') is None:
         product_dict['images'] = []
-    else:
-        product_dict = product.dict()
 
     # Ensure slug exists; if not, generate a slug from the title + short uuid suffix
     if not product_dict.get('slug'):
         base_slug = (product_dict.get('title') or 'product').lower().strip().replace(' ', '-')
         product_dict['slug'] = f"{base_slug}-{uuid.uuid4().hex[:6]}"
 
-    # Use crud.create_product with normalized dict -> construct a ProductCreate-like object
-    # crud.create_product expects a schemas.ProductCreate-like object, but it uses product.dict() internally
-    from pydantic import parse_obj_as
+    # Validate against strict ProductCreate schema for DB write
     product_create_obj = parse_obj_as(schemas.ProductCreate, product_dict)
 
-    return crud.create_product(db=db, product=product_create_obj, seller_id=seller.id)
+    return crud.create_product(db=db, product=product_create_obj, seller_id=int(seller.id))
 
 
 @router.put("/{product_id}", response_model=schemas.Product)
-def update_product(
+@router.put("/{product_id}/", response_model=schemas.Product)
+async def update_product(
     product_id: int,
-    product_update: schemas.ProductUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
@@ -310,11 +397,94 @@ def update_product(
     if product.seller_id != seller.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this product")
     
+    # Parse body as JSON or multipart-form; then validate into ProductUpdate
+    content_type = request.headers.get("content-type", "")
+    payload: Dict[str, Any]
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        def _to_float(val):
+            try:
+                return float(val) if val not in (None, "", []) else None
+            except Exception:
+                return None
+        def _to_int(val):
+            try:
+                return int(val) if val not in (None, "", []) else None
+            except Exception:
+                return None
+        payload = {
+            "title": form.get("title"),
+            "description": form.get("description"),
+            "short_description": form.get("short_description"),
+            "price": _to_float(form.get("price")),
+            "compare_price": _to_float(form.get("compare_price")),
+            "inventory_count": _to_int(form.get("inventory_count")),
+            "weight": _to_float(form.get("weight")),
+            "dimensions": None,
+            "images": None,
+            "category_id": _to_int(form.get("category_id")),
+            "is_active": None if form.get("is_active") in (None, "") else str(form.get("is_active")).lower() in ("1","true","yes","on"),
+        }
+        dims = form.get("dimensions")
+        if dims:
+            try:
+                import json
+                payload["dimensions"] = json.loads(str(dims))
+            except Exception:
+                payload["dimensions"] = None
+        imgs = form.get("images")
+        if imgs:
+            try:
+                import json
+                payload["images"] = json.loads(str(imgs))
+            except Exception:
+                payload["images"] = [s.strip() for s in str(imgs).split(",") if s.strip()]
+    else:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+    from pydantic import ValidationError, parse_obj_as
+    try:
+        product_update = parse_obj_as(schemas.ProductUpdate, payload)
+    except ValidationError as ve:
+        raise HTTPException(status_code=422, detail=ve.errors())
+
     updated_product = crud.update_product(db=db, product_id=product_id, product_update=product_update)
     if not updated_product:
         raise HTTPException(status_code=404, detail="Product not found")
     
     return updated_product
+
+
+@router.delete("/{product_id}")
+@router.delete("/{product_id}/")
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_seller)
+):
+    """Delete a product (seller only)"""
+    # Get seller profile
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=400, detail="Seller profile not found")
+
+    product = crud.get_product(db=db, product_id=product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product.seller_id != seller.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this product")
+
+    try:
+        db.delete(product)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete product: {e}")
+
+    return {"message": "Product deleted", "success": True}
 
 
 @router.get("/{product_id}/reviews", response_model=List[schemas.Review])

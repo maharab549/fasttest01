@@ -133,9 +133,30 @@ def get_messages(
         if unread_messages:
             db.commit()
     
+    # Convert messages to dict with proper ISO format dates
+    messages_data = []
+    for msg in messages:
+        msg_dict = {
+            "id": msg.id,
+            "sender_id": msg.sender_id,
+            "receiver_id": msg.receiver_id,
+            "subject": msg.subject,
+            "content": msg.content,
+            "is_read": msg.is_read,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            "related_order_id": msg.related_order_id,
+            "related_product_id": msg.related_product_id,
+            "attachment_type": msg.attachment_type,
+            "attachment_url": msg.attachment_url,
+            "attachment_filename": msg.attachment_filename,
+            "attachment_size": msg.attachment_size,
+            "attachment_thumbnail": msg.attachment_thumbnail
+        }
+        messages_data.append(msg_dict)
+    
     # Return in the expected format with data wrapper
     return {
-        "data": messages,
+        "data": messages_data,
         "total": query.count(),
         "skip": skip,
         "limit": limit
@@ -203,7 +224,7 @@ def get_conversations(
             "last_message": {
                 "id": latest_message.id,
                 "content": latest_message.content,
-                "created_at": latest_message.created_at,
+                "created_at": latest_message.created_at.isoformat() if latest_message.created_at else None,
                 "sender_id": latest_message.sender_id,
                 "is_read": latest_message.is_read
             } if latest_message else None,

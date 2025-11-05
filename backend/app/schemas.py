@@ -113,6 +113,22 @@ class ProductCreate(ProductBase):
     images: Optional[List[str]] = None
 
 
+# Relaxed input for product creation where slug can be omitted and generated server-side
+class ProductCreateInput(BaseModel):
+    title: str
+    description: Optional[str] = None
+    short_description: Optional[str] = None
+    price: float
+    compare_price: Optional[float] = None
+    sku: Optional[str] = None
+    inventory_count: int = 0
+    weight: Optional[float] = None
+    dimensions: Optional[Dict[str, Any]] = None
+    images: Optional[List[str]] = None
+    category_id: int
+    slug: Optional[str] = None  # optional; server may generate
+
+
 class ProductUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -127,15 +143,63 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# Product Variant Schemas
+class ProductVariantBase(BaseModel):
+    color: Optional[str] = None
+    size: Optional[str] = None
+    material: Optional[str] = None
+    style: Optional[str] = None
+    other_attributes: Optional[str] = None  # JSON string
+    price_adjustment: float = 0.0
+    inventory_count: int = 0
+    images: Optional[List[str]] = None
+
+
+class ProductVariantCreate(ProductVariantBase):
+    product_id: int
+    sku: Optional[str] = None
+    variant_name: Optional[str] = None
+
+
+class ProductVariantUpdate(BaseModel):
+    color: Optional[str] = None
+    size: Optional[str] = None
+    material: Optional[str] = None
+    style: Optional[str] = None
+    other_attributes: Optional[str] = None
+    price_adjustment: Optional[float] = None
+    inventory_count: Optional[int] = None
+    images: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class ProductVariant(ProductVariantBase):
+    id: int
+    product_id: int
+    sku: Optional[str] = None
+    variant_name: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 class Product(ProductBase):
     id: int
     seller_id: int
     seller: Optional[Seller] = None
     is_active: bool
     is_featured: bool
+    has_variants: bool = False  # NEW
+    variants: List['ProductVariant'] = []  # NEW - using string forward ref
+    approval_status: Optional[str] = "pending"
+    rejection_reason: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    approved_by: Optional[int] = None
     rating: float
-    review_count: int
-    view_count: int
+    review_count: Optional[int] = 0
+    view_count: Optional[int] = 0
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -143,10 +207,15 @@ class Product(ProductBase):
         from_attributes = True
 
 
+class ProductRejection(BaseModel):
+    reason: str
+
+
 # Cart Schemas
 class CartItemBase(BaseModel):
     product_id: int
     quantity: int
+    variant_id: Optional[int] = None
 
 
 class CartItemCreate(CartItemBase):
@@ -158,6 +227,7 @@ class CartItem(CartItemBase):
     user_id: int
     created_at: datetime
     product: Optional[Product] = None
+    variant: Optional['ProductVariant'] = None
     
     class Config:
         from_attributes = True
@@ -165,7 +235,7 @@ class CartItem(CartItemBase):
 
 # Order Schemas
 class OrderItemBase(BaseModel):
-    product_id: int
+    product_id: Optional[int] = None
     quantity: int
     unit_price: float
 
@@ -178,6 +248,8 @@ class OrderItem(OrderItemBase):
     id: int
     order_id: int
     total_price: float
+    product_name: Optional[str] = None
+    product_image: Optional[str] = None
     product: Optional[Product] = None
     
     class Config:
@@ -197,6 +269,7 @@ class OrderCreate(OrderBase):
 class Order(OrderBase):
     id: int
     user_id: int
+    user: Optional[User] = None
     order_number: str
     status: str
     total_amount: float
@@ -223,6 +296,7 @@ class ReviewBase(BaseModel):
     rating: int
     title: Optional[str] = None
     comment: Optional[str] = None
+    photos: Optional[List[str]] = None  # List of photo URLs
 
 
 class ReviewCreate(ReviewBase):
@@ -237,7 +311,7 @@ class Review(ReviewBase):
     is_approved: bool
     created_at: datetime
     user: Optional[User] = None
-    
+    photos: Optional[List[str]] = None
     class Config:
         from_attributes = True
 
@@ -514,3 +588,25 @@ class LoyaltyDashboard(BaseModel):
     active_redemptions: List[Redemption]
     next_tier: Optional[RewardTier] = None
     points_to_next_tier: Optional[int] = None
+
+
+# Withdrawal Schemas
+class WithdrawalRequestBase(BaseModel):
+    amount: float
+
+class WithdrawalRequestCreate(WithdrawalRequestBase):
+    pass
+
+class WithdrawalRequest(WithdrawalRequestBase):
+    id: int
+    seller_id: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# Rebuild models to resolve forward references
+Product.model_rebuild()
+CartItem.model_rebuild()

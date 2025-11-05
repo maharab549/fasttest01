@@ -108,6 +108,9 @@ def get_products(
 ) -> List[models.Product]:
     query = db.query(models.Product).filter(models.Product.is_active == True)
     
+    # Only show approved products to customers (not admin/seller views)
+    query = query.filter(models.Product.approval_status == "approved")
+    
     # Apply filters
     if search:
         if semantic_search:
@@ -147,7 +150,10 @@ def get_product(db: Session, product_id: int) -> Optional[models.Product]:
 
 
 def get_product_by_slug(db: Session, slug: str) -> Optional[models.Product]:
-    return db.query(models.Product).options(joinedload(models.Product.seller)).filter(models.Product.slug == slug).first()
+    return db.query(models.Product).options(
+        joinedload(models.Product.seller),
+        joinedload(models.Product.variants)
+    ).filter(models.Product.slug == slug).first()
 
 
 def get_products_by_seller(db: Session, seller_id: int, skip: int = 0, limit: int = 100) -> List[models.Product]:
@@ -202,10 +208,14 @@ def get_cart_items(db: Session, user_id: int) -> List[models.CartItem]:
     return db.query(models.CartItem).filter(models.CartItem.user_id == user_id).all()
 
 
-def add_to_cart(db: Session, user_id: int, product_id: int, quantity: int) -> models.CartItem:
-    # Check if item already exists in cart
+def add_to_cart(db: Session, user_id: int, product_id: int, quantity: int, variant_id: Optional[int] = None) -> models.CartItem:
+    # Check if item already exists in cart (same product and variant)
     existing_item = db.query(models.CartItem).filter(
-        and_(models.CartItem.user_id == user_id, models.CartItem.product_id == product_id)
+        and_(
+            models.CartItem.user_id == user_id,
+            models.CartItem.product_id == product_id,
+            models.CartItem.variant_id == variant_id
+        )
     ).first()
     
     if existing_item:
@@ -217,7 +227,8 @@ def add_to_cart(db: Session, user_id: int, product_id: int, quantity: int) -> mo
         cart_item = models.CartItem(
             user_id=user_id,
             product_id=product_id,
-            quantity=quantity
+            quantity=quantity,
+            variant_id=variant_id
         )
         db.add(cart_item)
         db.commit()
@@ -272,6 +283,7 @@ def create_order(db: Session, order: schemas.OrderCreate, user_id: int) -> model
     db_order = models.Order(
         user_id=user_id,
         order_number=order_number,
+        status="pending",
         total_amount=total_amount,
         shipping_address=order.shipping_address,
         billing_address=order.billing_address,
@@ -281,14 +293,30 @@ def create_order(db: Session, order: schemas.OrderCreate, user_id: int) -> model
     db.commit()
     db.refresh(db_order)
     
-    # Create order items
+    # Create order items with product snapshots
     for item in order.items:
+        # Get product to capture name and image
+        product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+        
+        # Get first image from images array if available
+        product_image = None
+        if product and product.images:
+            try:
+                import json
+                images = json.loads(product.images) if isinstance(product.images, str) else product.images
+                if isinstance(images, list) and len(images) > 0:
+                    product_image = images[0]
+            except:
+                pass
+        
         order_item = models.OrderItem(
             order_id=db_order.id,
             product_id=item.product_id,
             quantity=item.quantity,
             unit_price=item.unit_price,
-            total_price=item.quantity * item.unit_price
+            total_price=item.quantity * item.unit_price,
+            product_name=product.title if product else None,
+            product_image=product_image
         )
         db.add(order_item)
     
@@ -791,3 +819,43 @@ def process_referral(db: Session, referral_code: str, new_user_id: int) -> bool:
     
     return True
 
+
+# Withdrawal CRUD
+def create_withdrawal_request(db: Session, seller_id: int, amount: float) -> models.WithdrawalRequest:
+    withdrawal = models.WithdrawalRequest(
+        seller_id=seller_id,
+        amount=amount,
+        status="pending"
+    )
+    db.add(withdrawal)
+    db.commit()
+    db.refresh(withdrawal)
+    return withdrawal
+
+def get_withdrawal_requests_by_seller(db: Session, seller_id: int) -> list[models.WithdrawalRequest]:
+    return db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.seller_id == seller_id).order_by(models.WithdrawalRequest.created_at.desc()).all()
+
+
+# Product Approval CRUD
+def approve_product(db: Session, product_id: int, admin_user_id: int) -> Optional[models.Product]:
+    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if product:
+        setattr(product, "approval_status", "approved")
+        setattr(product, "approved_by", admin_user_id)
+        from sqlalchemy.sql import func
+        setattr(product, "approved_at", func.now())
+        db.commit()
+        db.refresh(product)
+    return product
+
+def reject_product(db: Session, product_id: int, reason: str) -> Optional[models.Product]:
+    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if product:
+        setattr(product, "approval_status", "rejected")
+        setattr(product, "rejection_reason", reason)
+        db.commit()
+        db.refresh(product)
+    return product
+
+def get_pending_products(db: Session, skip: int = 0, limit: int = 100) -> List[models.Product]:
+    return db.query(models.Product).filter(models.Product.approval_status == "pending").offset(skip).limit(limit).all()

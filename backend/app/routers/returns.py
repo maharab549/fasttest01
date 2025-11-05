@@ -65,6 +65,161 @@ def get_my_returns(
     return returns
 
 
+@router.get("/seller/returns", response_model=List[schemas.Return])
+def get_seller_returns(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Get all return requests for products sold by the current seller"""
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import and_
+    import logging
+    
+    logger = logging.getLogger("uvicorn")
+    logger.info(f"[SELLER RETURNS] Current user: {current_user.username} (ID: {current_user.id})")
+    
+    # Get seller profile
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        logger.warning(f"[SELLER RETURNS] No seller profile found for user {current_user.id}")
+        return []
+    
+    logger.info(f"[SELLER RETURNS] Seller ID: {seller.id}")
+    
+    # Get all returns where the products belong to the current seller
+    returns = db.query(models.Return)\
+        .join(models.ReturnItem)\
+        .join(models.Product, models.ReturnItem.product_id == models.Product.id)\
+        .filter(models.Product.seller_id == seller.id)\
+        .options(joinedload(models.Return.return_items))\
+        .distinct()\
+        .offset(skip).limit(limit).all()
+    
+    logger.info(f"[SELLER RETURNS] Found {len(returns)} returns for seller")
+    
+    return returns
+
+
+@router.put("/seller/{return_id}/approve", response_model=schemas.Return)
+def approve_return_seller(
+    return_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Approve a return request (seller only)"""
+    return_request = crud.get_return(db=db, return_id=return_id)
+    
+    if not return_request:
+        raise HTTPException(status_code=404, detail="Return request not found")
+    
+    # Verify seller owns the products in this return
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=403, detail="Seller profile not found")
+    
+    # Check if all items in the return belong to this seller
+    for item in return_request.return_items:
+        if item.product.seller_id != seller.id:
+            raise HTTPException(status_code=403, detail="Not authorized to approve this return")
+    
+    # Update status to approved
+    updated_return = crud.update_return_status(
+        db=db,
+        return_id=return_id,
+        status="approved",
+        admin_notes=f"Approved by seller {current_user.username}"
+    )
+    
+    return updated_return
+
+
+@router.put("/seller/{return_id}/reject", response_model=schemas.Return)
+def reject_return_seller(
+    return_id: int,
+    reason: str = "",
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Reject a return request (seller only)"""
+    return_request = crud.get_return(db=db, return_id=return_id)
+    
+    if not return_request:
+        raise HTTPException(status_code=404, detail="Return request not found")
+    
+    # Verify seller owns the products in this return
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=403, detail="Seller profile not found")
+    
+    # Check if all items in the return belong to this seller
+    for item in return_request.return_items:
+        if item.product.seller_id != seller.id:
+            raise HTTPException(status_code=403, detail="Not authorized to reject this return")
+    
+    # Update status to rejected
+    notes = f"Rejected by seller {current_user.username}"
+    if reason:
+        notes += f": {reason}"
+    
+    updated_return = crud.update_return_status(
+        db=db,
+        return_id=return_id,
+        status="rejected",
+        admin_notes=notes
+    )
+    
+    return updated_return
+
+
+@router.put("/seller/{return_id}/status", response_model=schemas.Return)
+def update_return_status_seller(
+    return_id: int,
+    status: str,
+    notes: str = "",
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Update return status (seller only)
+    
+    Valid statuses for sellers: approved, rejected, received, refunded, completed
+    """
+    valid_statuses = ["approved", "rejected", "received", "refunded", "completed"]
+    if status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    return_request = crud.get_return(db=db, return_id=return_id)
+    
+    if not return_request:
+        raise HTTPException(status_code=404, detail="Return request not found")
+    
+    # Verify seller owns the products in this return
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=403, detail="Seller profile not found")
+    
+    # Check if all items in the return belong to this seller
+    for item in return_request.return_items:
+        if item.product.seller_id != seller.id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this return")
+    
+    # Update status
+    admin_notes = notes if notes else f"Updated to {status} by seller {current_user.username}"
+    updated_return = crud.update_return_status(
+        db=db,
+        return_id=return_id,
+        status=status,
+        admin_notes=admin_notes
+    )
+    
+    return updated_return
+
+
 @router.get("/{return_id}", response_model=schemas.Return)
 def get_return_details(
     return_id: int,

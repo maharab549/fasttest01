@@ -39,19 +39,41 @@ def add_to_cart(
     if is_active is False:
         raise HTTPException(status_code=400, detail="Product is not available")
     
-    # Check inventory
-    inventory = cast(int, product_typed.inventory_count)
-    if cart_item.quantity > inventory:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only {inventory} items available in stock"
-        )
+    # If variant_id is provided, validate it
+    if cart_item.variant_id:
+        variant = db.query(models.ProductVariant).filter(
+            models.ProductVariant.id == cart_item.variant_id,
+            models.ProductVariant.product_id == cart_item.product_id,
+            models.ProductVariant.is_active == True
+        ).first()
+        
+        if not variant:
+            raise HTTPException(status_code=404, detail="Product variant not found")
+        
+        # Check variant inventory - use getattr to safely access
+        variant_inventory = getattr(variant, 'inventory_count', 0)
+        if variant_inventory is None:
+            variant_inventory = 0
+        if cart_item.quantity > variant_inventory:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only {variant_inventory} items available for this variant"
+            )
+    else:
+        # Check product inventory (no variant)
+        inventory = cast(int, product_typed.inventory_count)
+        if cart_item.quantity > inventory:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only {inventory} items available in stock"
+            )
     
     return crud.add_to_cart(
         db=db,
         user_id=current_user.id,
         product_id=cart_item.product_id,
-        quantity=cart_item.quantity
+        quantity=cart_item.quantity,
+        variant_id=cart_item.variant_id
     )
 
 

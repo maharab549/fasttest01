@@ -24,6 +24,31 @@ def create_sample_data():
             {"name": "Home & Garden", "slug": "home-garden", "description": "Home improvement and gardening"},
             {"name": "Sports", "slug": "sports", "description": "Sports and outdoor equipment"},
             {"name": "Toys", "slug": "toys", "description": "Toys and games"},
+            {"name": "Computers", "slug": "computers", "description": "Desktops, laptops, and accessories"},
+            {"name": "Watches", "slug": "watches", "description": "Wrist watches and smartwatches"},
+            {"name": "Photography", "slug": "photography", "description": "Cameras and photography gear"},
+            {"name": "Audio", "slug": "audio", "description": "Speakers, headphones, and audio equipment"},
+            {"name": "Beauty", "slug": "beauty", "description": "Beauty and personal care"},
+            {"name": "Health", "slug": "health", "description": "Health and wellness products"},
+            {"name": "Groceries", "slug": "groceries", "description": "Food and grocery items"},
+            {"name": "Automotive", "slug": "automotive", "description": "Car accessories and parts"},
+            {"name": "Jewelry", "slug": "jewelry", "description": "Jewelry and accessories"},
+            {"name": "Baby & Kids", "slug": "baby-kids", "description": "Baby and kids products"},
+            {"name": "Office Supplies", "slug": "office-supplies", "description": "Office and school supplies"},
+            {"name": "Pet Supplies", "slug": "pet-supplies", "description": "Pet food and accessories"},
+            {"name": "Garden", "slug": "garden", "description": "Gardening tools and plants"},
+            {"name": "Furniture", "slug": "furniture", "description": "Home and office furniture"},
+            {"name": "Footwear", "slug": "footwear", "description": "Shoes, sandals, and boots"},
+            {"name": "Bags & Luggage", "slug": "bags-luggage", "description": "Bags, backpacks, and luggage"},
+            {"name": "Musical Instruments", "slug": "musical-instruments", "description": "Instruments and music gear"},
+            {"name": "Crafts", "slug": "crafts", "description": "Arts and crafts supplies"},
+            {"name": "Travel", "slug": "travel", "description": "Travel accessories and gear"},
+            {"name": "Appliances", "slug": "appliances", "description": "Home and kitchen appliances"},
+            {"name": "Stationery", "slug": "stationery", "description": "Stationery and writing supplies"},
+            {"name": "Outdoor", "slug": "outdoor", "description": "Outdoor and camping gear"},
+            {"name": "Mobile Accessories", "slug": "mobile-accessories", "description": "Phone cases, chargers, and more"},
+            {"name": "Gaming", "slug": "gaming", "description": "Video games and gaming accessories"},
+            {"name": "Home Decor", "slug": "home-decor", "description": "Decorative items for home"},
         ]
         
         for cat_data in categories_data:
@@ -46,8 +71,9 @@ def create_sample_data():
         existing_admin = crud.get_user_by_username(db, "admin")
         if not existing_admin:
             admin_user = crud.create_user(db, admin_data)
-            admin_user.is_admin = True
-            db.commit()
+            # Set is_admin using update_user to avoid direct assignment to SQLAlchemy column
+            from app.schemas import UserUpdate
+            crud.update_user(db, getattr(admin_user, 'id'), UserUpdate(is_admin=True))
             print("Created admin user: admin / admin123")
         
         # Create sample sellers
@@ -100,7 +126,7 @@ def create_sample_data():
             existing_seller = crud.get_user_by_username(db, seller_data["user"].username)
             if not existing_seller:
                 seller_user = crud.create_user(db, seller_data["user"])
-                seller_profile = crud.create_seller(db, seller_data["store"], seller_user.id)
+                seller_profile = crud.create_seller(db, seller_data["store"], getattr(seller_user, 'id'))
                 print(f"Created seller: {seller_data['user'].username} / seller123")
         
         # Create sample customers

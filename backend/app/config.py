@@ -15,16 +15,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     
     # JWT
-    secret_key: str
+    secret_key: str = "development-secret-key-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
     # Stripe
-    stripe_publishable_key: str
-    stripe_secret_key: str
+    stripe_publishable_key: str = "pk_test_default"
+    stripe_secret_key: str = "sk_test_default"
 
     # AI
-    gemini_api_key: str
+    gemini_api_key: str = "default-gemini-key"
     groq_api_key: str | None = None
     
     # CORS

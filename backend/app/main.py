@@ -7,12 +7,18 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .database import engine
 from . import models
+from . import db_migrations
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages, chatbot, returns, loyalty
+    sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants
 )
 from .ws_redis import bridge
+from .security_middleware import (
+    RateLimitMiddleware, 
+    RequestLoggingMiddleware, 
+    SecurityHeadersMiddleware
+)
 import os
 from datetime import datetime
 
@@ -25,8 +31,8 @@ models.Base.metadata.create_all(bind=engine)
 # FastAPI app creation
 # ----------------------------------------------------------------
 app = FastAPI(
-    title="Marketplace API",
-    description="A comprehensive marketplace API with authentication, product, cart, and order systems",
+    title="MegaMart API",
+    description="A comprehensive MegaMart API with authentication, product, cart, and order systems",
     version="1.1.1",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
@@ -35,6 +41,15 @@ app = FastAPI(
 # ----------------------------------------------------------------
 # Security & middleware
 # ----------------------------------------------------------------
+
+# Add security headers middleware (OWASP recommended headers)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Add request logging middleware for security monitoring
+app.add_middleware(RequestLoggingMiddleware)
+
+# Add rate limiting middleware - DISABLED for development
+# app.add_middleware(RateLimitMiddleware, requests_per_minute=300, requests_per_hour=5000)
 
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
@@ -46,6 +61,7 @@ frontend_origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
     "http://localhost:5173",
+    "http://localhost:5174",
     "http://localhost:3000",
     "http://192.168.56.1:5173"
 ]
@@ -83,7 +99,7 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, chatbot, returns, loyalty
+    sms, reviews, chatbot, returns, loyalty, health, variants
 ]
 
 for router in routers:
@@ -97,6 +113,12 @@ app.include_router(ws_messages.router)
 # ----------------------------------------------------------------
 @app.on_event("startup")
 async def startup_events():
+    # Lightweight, idempotent DB migrations for local SQLite/dev
+    try:
+        db_migrations.run_all(engine)
+    except Exception:
+        pass
+    # Initialize Redis bridge (best-effort)
     try:
         await bridge.init()
     except Exception:
@@ -115,7 +137,7 @@ async def shutdown_events():
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to Marketplace API (Render Version)",
+        "message": "Welcome to MegaMart API (Render Version)",
         "version": "1.1.1",
         "docs": "/api/docs",
         "redoc": "/api/redoc"
@@ -123,7 +145,7 @@ def read_root():
 
 @app.get("/api/v1/health")
 def health_check():
-    return {"status": "healthy", "message": "Marketplace API is running securely"}
+    return {"status": "healthy", "message": "MegaMart API is running securely"}
 
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):

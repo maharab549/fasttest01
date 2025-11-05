@@ -290,10 +290,29 @@ def get_all_orders_admin(
             "id": order.id,
             "user_id": order.user_id,
             "total_amount": float(order.total_amount),
+            "total_price": float(order.total_amount),  # Alias for frontend compatibility
             "status": order.status,
             "created_at": order.created_at.isoformat() if order.created_at else None,
             "shipping_address": order.shipping_address,
-            "payment_method": order.payment_method
+            "payment_method": order.payment_method,
+            "user": {
+                "id": order.user.id if order.user else None,
+                "email": order.user.email if order.user else "Unknown",
+                "full_name": order.user.full_name if order.user else "Unknown User"
+            } if order.user else {"id": None, "email": "Unknown", "full_name": "Unknown User"},
+            "order_items": [
+                {
+                    "id": item.id,
+                    "product_id": item.product_id,
+                    "quantity": item.quantity,
+                    "unit_price": float(item.unit_price),
+                    "product": {
+                        "id": item.product.id if item.product else None,
+                        "title": item.product.title if item.product else "Unknown Product"
+                    } if item.product else {"id": None, "title": "Unknown Product"}
+                }
+                for item in order.order_items
+            ] if hasattr(order, 'order_items') else []
         }
         for order in orders
     ]
@@ -701,3 +720,50 @@ def get_analytics(
         }
     }
 
+
+# Product Approval Management
+@router.get("/products/pending", response_model=List[schemas.Product])
+def get_pending_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all pending products for approval"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    return crud.get_pending_products(db=db, skip=skip, limit=limit)
+
+@router.put("/products/{product_id}/approve", response_model=schemas.Product)
+def approve_product(
+    product_id: int,
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Approve a product"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    product = crud.approve_product(db=db, product_id=product_id, admin_user_id=current_user.id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return product
+
+@router.put("/products/{product_id}/reject")
+def reject_product(
+    product_id: int,
+    rejection_data: schemas.ProductRejection,
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reject a product with reason"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    product = crud.reject_product(db=db, product_id=product_id, reason=rejection_data.reason)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return product

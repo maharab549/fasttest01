@@ -1,9 +1,12 @@
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from .. import crud, schemas, auth, models
 from ..database import get_db
 from .notifications import create_notification
+from typing import cast
+import json
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -16,22 +19,41 @@ def create_order(
 ):
     """Create a new order"""
     # Validate all products exist and are available
+    # Collect seller notifications context: seller_user_id -> list of item summaries
+    seller_items_map = {}
     for item in order.items:
         product = crud.get_product(db=db, product_id=item.product_id)
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
         
-        if not product.is_active:
+        product_typed = cast(models.Product, product)
+        is_active = cast(bool, product_typed.is_active)
+        if is_active is False:
             raise HTTPException(status_code=400, detail=f"Product {product.title} is not available")
         
-        if item.quantity > product.inventory_count:
+        inventory = cast(int, product_typed.inventory_count)
+        if int(item.quantity) > inventory:
             raise HTTPException(
                 status_code=400,
-                detail=f"Only {product.inventory_count} items available for {product.title}"
+                detail=f"Only {inventory} items available for {product.title}"
             )
         
         # Set unit price from product
-        item.unit_price = product.price
+        unit_price_val = cast(float, product_typed.price)
+        item.unit_price = unit_price_val
+
+        # Track items per seller for notifications
+        try:
+            if product.seller and product.seller.user_id:
+                sid = int(product.seller.user_id)
+                entry = seller_items_map.setdefault(sid, [])
+                entry.append({
+                    "title": getattr(product, "title", str(product.id)),
+                    "quantity": int(item.quantity)
+                })
+        except Exception:
+            # best-effort, continue
+            pass
     
     # Create the order
     db_order = crud.create_order(db=db, order=order, user_id=current_user.id)
@@ -41,16 +63,18 @@ def create_order(
         db=db,
         user_id=current_user.id,
         title=f"Order #{db_order.order_number} Placed Successfully",
-        message=f"Your order for ${db_order.total_amount:.2f} has been placed and is awaiting confirmation.",
+        message=f"Your order for ${cast(float, db_order.total_amount):.2f} has been placed and is awaiting confirmation.",
         notification_type="new_order",
-        related_order_id=db_order.id
+        related_order_id=cast(int, db_order.id)
     )
     
     # Update inventory
     for item in order.items:
         product = crud.get_product(db=db, product_id=item.product_id)
         if product:
-            product.inventory_count -= item.quantity
+            inv_now = cast(int, product.inventory_count)
+            new_inv = int(inv_now - int(item.quantity))
+            setattr(product, "inventory_count", new_inv)
             db.commit()
     
     # Clear cart after successful order
@@ -59,10 +83,11 @@ def create_order(
     # Award loyalty points for the purchase (1 point per dollar spent)
     loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
     if loyalty_account:
-        points_earned = int(db_order.total_amount)  # 1 point per dollar
+        total_amount_val = cast(float, db_order.total_amount)
+        points_earned = int(total_amount_val)  # 1 point per dollar
         crud.award_points(
             db=db,
-            loyalty_account_id=loyalty_account.id,
+            loyalty_account_id=cast(int, loyalty_account.id),
             points=points_earned,
             source="purchase",
             source_id=str(db_order.id),
@@ -70,10 +95,34 @@ def create_order(
             metadata={"order_number": db_order.order_number, "order_amount": db_order.total_amount}
         )
     
+    # Notify each seller with items included in the order
+    try:
+        for seller_user_id, items in seller_items_map.items():
+            # Summarize items: up to 3 titles + count
+            titles = ", ".join([i["title"] for i in items[:3]])
+            more = len(items) - 3
+            if more > 0:
+                titles += f" and {more} more"
+            total_qty = sum(i["quantity"] for i in items)
+            create_notification(
+                db=db,
+                user_id=seller_user_id,
+                title=f"New order #{db_order.order_number}",
+                message=f"You sold {total_qty} item(s): {titles}",
+                notification_type="seller_new_order",
+                related_order_id=cast(int, db_order.id)
+            )
+    except Exception:
+        # best-effort
+        pass
+    
     return db_order
+
+    
 
 
 @router.get("/", response_model=List[schemas.Order])
+@router.get("", response_model=List[schemas.Order])
 def get_user_orders(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=50),
@@ -81,11 +130,16 @@ def get_user_orders(
     current_user: schemas.User = Depends(auth.get_current_active_user)
 ):
     """Get current user's orders"""
+    print(f"[orders.py] 🔍 get_user_orders called: user_id={current_user.id}, skip={skip}, limit={limit}")
     orders = crud.get_orders_by_user(db=db, user_id=current_user.id, skip=skip, limit=limit)
+    print(f"[orders.py] 📦 Found {len(orders)} orders for user {current_user.id}")
+    for i, o in enumerate(orders):
+        print(f"[orders.py]   Order {i}: id={o.id}, order_number={o.order_number}, status={o.status}, user_id={o.user_id}")
     return orders
 
 
 @router.get("/{order_id}", response_model=schemas.Order)
+@router.get("/{order_id}/", response_model=schemas.Order)
 def get_order(
     order_id: int,
     db: Session = Depends(get_db),
@@ -97,13 +151,14 @@ def get_order(
         raise HTTPException(status_code=404, detail="Order not found")
     
     # Check if order belongs to current user
-    if order.user_id != current_user.id:
+    if cast(int, order.user_id) != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
     
     return order
 
 
 @router.put("/{order_id}/status", response_model=schemas.Order)
+@router.put("/{order_id}/status/", response_model=schemas.Order)
 def update_order_status(
     order_id: int,
     status_data: schemas.OrderStatusUpdate,
@@ -141,28 +196,51 @@ def update_order_status(
         # Create a notification for the user who placed the order
         create_notification(
             db=db,
-            user_id=updated_order.user_id,
+            user_id=cast(int, updated_order.user_id),
             title=f"Order #{updated_order.order_number} Status Updated",
             message=f"Your order status has been updated to: {updated_order.status.capitalize()}",
             notification_type="order_update",
-            related_order_id=updated_order.id
+            related_order_id=cast(int, updated_order.id)
         )
 
         # If order is delivered, also prompt the user to leave a review
-        if updated_order.status == "delivered":
+        if cast(str, updated_order.status) == "delivered":
             create_notification(
                 db=db,
-                user_id=updated_order.user_id,
+                user_id=cast(int, updated_order.user_id),
                 title=f"Order #{updated_order.order_number} Delivered",
                 message=(
                     "Your order was delivered successfully. We'd love to hear your feedback — "
                     "please leave a review for the items you received."
                 ),
                 notification_type="review_request",
-                related_order_id=updated_order.id
+                related_order_id=cast(int, updated_order.id)
             )
 
     return updated_order
+
+
+@router.get("/seller/orders/{order_id}", response_model=schemas.Order)
+def get_seller_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """Get order details for seller - seller can view orders containing their products"""
+    order = crud.get_order(db=db, order_id=order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check if seller has products in this order
+    seller_has_products = any(
+        item.product and item.product.seller_id == current_user.id
+        for item in order.order_items
+    )
+    
+    if not seller_has_products and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to view this order")
+    
+    return order
 
 
 @router.get("/{order_id}/track/")
@@ -178,7 +256,7 @@ def track_order(
         raise HTTPException(status_code=404, detail="Order not found")
     
     # Check if order belongs to current user
-    if order.user_id != current_user.id:
+    if cast(int, order.user_id) != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to track this order")
     
     # Order status timeline
@@ -195,7 +273,7 @@ def track_order(
         "order_id": order.id,
         "order_number": order.order_number,
         "status": order.status,
-        "status_description": status_timeline.get(order.status, "Unknown status"),
+    "status_description": status_timeline.get(cast(str, order.status), "Unknown status"),
         "created_at": order.created_at,
         "updated_at": order.updated_at,
         "total_amount": order.total_amount
@@ -227,4 +305,79 @@ def get_delivered_orders(
 
     orders = query.order_by(models.Order.created_at.desc()).offset(skip).limit(limit).all()
     return orders
+
+
+@router.put("/{order_id}/cancel", response_model=schemas.Order)
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    """Cancel an order (user only, if not shipped/delivered/refunded)"""
+    order = crud.get_order(db=db, order_id=order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if getattr(order, "user_id", None) != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this order")
+    if order.status in ["shipped", "delivered", "cancelled"] or order.payment_status == "refunded":
+        raise HTTPException(status_code=400, detail="Order cannot be cancelled at this stage")
+    updated_order = crud.update_order_status(db=db, order_id=order_id, status="cancelled")
+    if updated_order:
+        create_notification(
+            db=db,
+            user_id=int(getattr(updated_order, "user_id", 0)),
+            title=f"Order #{updated_order.order_number} Cancelled",
+            message="Your order has been cancelled.",
+            notification_type="order_cancelled",
+            related_order_id=int(getattr(updated_order, "id", 0))
+        )
+    return updated_order
+
+
+class OrderEditRequest(BaseModel):
+    shipping_address: Optional[Dict[str, Any]] = None
+    billing_address: Optional[Dict[str, Any]] = None
+    items: Optional[List[Dict[str, Any]]] = None  # Each item: {order_item_id, quantity}
+
+
+@router.put("/{order_id}/edit", response_model=schemas.Order)
+def edit_order(
+    order_id: int,
+    edit_data: OrderEditRequest,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    """Edit an order (user only, if not shipped/delivered/refunded)"""
+    order = crud.get_order(db=db, order_id=order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if getattr(order, "user_id", None) != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this order")
+    if getattr(order, "status", None) in ["shipped", "delivered", "cancelled"] or getattr(order, "payment_status", None) == "refunded":
+        raise HTTPException(status_code=400, detail="Order cannot be edited at this stage")
+    # Update address
+    if edit_data.shipping_address:
+        setattr(order, "shipping_address", edit_data.shipping_address)
+    if edit_data.billing_address:
+        setattr(order, "billing_address", edit_data.billing_address)
+    # Update items/quantities
+    if edit_data.items:
+        for item_update in edit_data.items:
+            order_item = next((oi for oi in order.order_items if oi.id == item_update.get("order_item_id")), None)
+            if order_item:
+                new_qty = item_update.get("quantity")
+                if new_qty and new_qty > 0:
+                    order_item.quantity = new_qty
+    db.commit()
+    db.refresh(order)
+    # Log and notify
+    create_notification(
+        db=db,
+        user_id=int(getattr(order, "user_id", 0)),
+        title=f"Order #{order.order_number} Edited",
+        message="Your order details have been updated.",
+        notification_type="order_edited",
+        related_order_id=int(getattr(order, "id", 0))
+    )
+    return order
 

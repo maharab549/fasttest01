@@ -36,6 +36,7 @@ class Seller(Base):
     is_verified = Column(Boolean, default=False)
     rating = Column(Float, default=0.0)
     total_sales = Column(Integer, default=0)
+    balance = Column(Float, default=0.0)  # Seller's available funds
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -78,6 +79,11 @@ class Product(Base):
     images = Column(JSON, nullable=True)  # ["image1.jpg", "image2.jpg"]
     is_active = Column(Boolean, default=True)
     is_featured = Column(Boolean, default=False)
+    has_variants = Column(Boolean, default=False)  # NEW: Product has color/size variants
+    approval_status = Column(String, default="pending")  # pending, approved, rejected
+    rejection_reason = Column(Text, nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     rating = Column(Float, default=0.0)
     review_count = Column(Integer, default=0)
     view_count = Column(Integer, default=0)
@@ -90,6 +96,29 @@ class Product(Base):
     order_items = relationship("OrderItem", back_populates="product")
     cart_items = relationship("CartItem", back_populates="product")
     reviews = relationship("Review", back_populates="product")
+    variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
+
+
+class ProductVariant(Base):
+    __tablename__ = "product_variants"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    sku = Column(String, unique=True, index=True)
+    variant_name = Column(String)  # e.g., "Red - Medium"
+    color = Column(String, nullable=True)
+    size = Column(String, nullable=True)
+    material = Column(String, nullable=True)
+    style = Column(String, nullable=True)
+    other_attributes = Column(Text, nullable=True)  # JSON string for custom attributes
+    price_adjustment = Column(Float, default=0.0)  # + or - from base price
+    inventory_count = Column(Integer, default=0)
+    images = Column(Text, nullable=True)  # JSON array of variant-specific images
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    product = relationship("Product", back_populates="variants")
 
 
 class Order(Base):
@@ -127,13 +156,20 @@ class OrderItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"))
     product_id = Column(Integer, ForeignKey("products.id"))
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True)  # NEW
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
     
+    # Product snapshot fields (for when product is deleted/modified)
+    product_name = Column(String, nullable=True)
+    product_image = Column(String, nullable=True)
+    variant_details = Column(Text, nullable=True)  # NEW: JSON string of variant (color, size, etc.)
+    
     # Relationships
     order = relationship("Order", back_populates="order_items")
     product = relationship("Product", back_populates="order_items")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])  # NEW
 
 
 class Return(Base):
@@ -195,6 +231,7 @@ class CartItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     product_id = Column(Integer, ForeignKey("products.id"))
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True)  # NEW
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -202,6 +239,7 @@ class CartItem(Base):
     # Relationships
     user = relationship("User", back_populates="cart_items")
     product = relationship("Product", back_populates="cart_items")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])  # NEW
 
 
 class Review(Base):
@@ -214,6 +252,7 @@ class Review(Base):
     rating = Column(Integer, nullable=False)  # 1-5 stars
     title = Column(String, nullable=True)
     comment = Column(Text, nullable=True)
+    photos = Column(JSON, nullable=True)  # List of photo URLs
     is_verified_purchase = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -386,3 +425,14 @@ class Redemption(Base):
     # Relationships
     loyalty_account = relationship("LoyaltyAccount", back_populates="redemptions")
     order = relationship("Order")
+
+
+class WithdrawalRequest(Base):
+    __tablename__ = "withdrawal_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"))
+    amount = Column(Float, nullable=False)
+    status = Column(String, default="pending")  # pending, approved, rejected, paid
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    seller = relationship("Seller")
