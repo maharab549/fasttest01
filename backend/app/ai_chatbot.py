@@ -51,43 +51,143 @@ if GROQ_API_KEY and Groq is not None:
 
 
 def get_fallback_response(user_query: str) -> str:
-    """Provides a simple rule-based fallback response when Gemini is unavailable."""
+    """Provides a simple rule-based fallback response when Gemini is unavailable.
+
+    This version also appends a small set of follow-up suggestions (intent-aware)
+    to help guide the user to common next steps.
+    """
     query_lower = user_query.lower()
-    
+
+    intent = "default"
+    resp = None
+
     # Greeting patterns
     if re.search(r'\b(hi|hello|hey|greetings)\b', query_lower):
-        return "Hello! Welcome to our premium marketplace. How may I assist you today? You can ask me about products, orders, shipping, or any other shopping-related questions."
-    
+        intent = "greeting"
+        resp = (
+            "Hello! Welcome to our premium marketplace. How may I assist you today? "
+            "You can ask me about products, orders, shipping, or any other shopping-related questions."
+        )
+
     # Product inquiry patterns
-    if re.search(r'\b(product|item|buy|purchase|shop|looking for)\b', query_lower):
-        return "I'd be happy to help you find products! You can browse our categories, use the search bar, or filter products by price, rating, and more. What type of product are you interested in?"
-    
+    elif re.search(r'\b(product|item|buy|purchase|shop|looking for)\b', query_lower):
+        intent = "product"
+        resp = (
+            "I'd be happy to help you find products! You can browse our categories, use the search bar, "
+            "or filter products by price, rating, and more. What type of product are you interested in?"
+        )
+
     # Order/shipping patterns
-    if re.search(r'\b(order|shipping|delivery|track|status)\b', query_lower):
-        return "For order-related inquiries, please visit your Orders page where you can track your shipments and view order details. If you need specific help, please provide your order number."
-    
+    elif re.search(r'\b(order|shipping|delivery|track|status)\b', query_lower):
+        intent = "order"
+        resp = (
+            "For order-related inquiries, please visit your Orders page where you can track your shipments and view order details. "
+            "If you need specific help, please provide your order number."
+        )
+
     # Payment patterns
-    if re.search(r'\b(payment|pay|card|checkout|stripe)\b', query_lower):
-        return "We accept secure payments through Stripe, supporting all major credit cards. Your payment information is encrypted and safe. Is there anything specific about the payment process you'd like to know?"
-    
+    elif re.search(r'\b(payment|pay|card|checkout|stripe)\b', query_lower):
+        intent = "payment"
+        resp = (
+            "We accept secure payments through Stripe, supporting all major credit cards. Your payment information is encrypted and safe. "
+            "Is there anything specific about the payment process you'd like to know?"
+        )
+
     # Return/refund patterns
-    if re.search(r'\b(return|refund|exchange|cancel)\b', query_lower):
-        return "Our return policy allows you to return items within 30 days of delivery. Please visit your Orders page to initiate a return. For specific questions, feel free to contact our customer support."
-    
+    elif re.search(r'\b(return|refund|exchange|cancel)\b', query_lower):
+        intent = "return"
+        resp = (
+            "Our return policy allows you to return items within 30 days of delivery. Please visit your Orders page to initiate a return. "
+            "For specific questions, feel free to contact our customer support."
+        )
+
     # Account patterns
-    if re.search(r'\b(account|profile|login|register|sign)\b', query_lower):
-        return "You can manage your account from the Account page. There you can update your profile, view order history, manage addresses, and adjust preferences. Need help with something specific?"
-    
+    elif re.search(r'\b(account|profile|login|register|sign)\b', query_lower):
+        intent = "account"
+        resp = (
+            "You can manage your account from the Account page. There you can update your profile, view order history, manage addresses, "
+            "and adjust preferences. Need help with something specific?"
+        )
+
     # Help/support patterns
-    if re.search(r'\b(help|support|assist|question|problem|issue)\b', query_lower):
-        return "I'm here to help! I can assist with product searches, order tracking, account management, and general shopping questions. What would you like help with?"
-    
+    elif re.search(r'\b(help|support|assist|question|problem|issue)\b', query_lower):
+        intent = "support"
+        resp = (
+            "I'm here to help! I can assist with product searches, order tracking, account management, and general shopping questions. "
+            "What would you like help with?"
+        )
+
     # Gratitude patterns
-    if re.search(r'\b(thank|thanks|appreciate)\b', query_lower):
-        return "You're very welcome! If you have any other questions, I'm always here to help. Enjoy your shopping experience!"
-    
+    elif re.search(r'\b(thank|thanks|appreciate)\b', query_lower):
+        intent = "gratitude"
+        resp = "You're very welcome! If you have any other questions, I'm always here to help. Enjoy your shopping experience!"
+
     # Default response
-    return "Thank you for your message. I'm here to assist with product inquiries, order tracking, account management, and shopping questions. How can I help you today?"
+    if resp is None:
+        intent = "default"
+        resp = (
+            "Thank you for your message. I'm here to assist with product inquiries, order tracking, account management, and shopping questions. "
+            "How can I help you today?"
+        )
+
+    # Append intent-aware follow-up suggestions
+    suggestions = get_followup_suggestions(intent)
+    return f"{resp}\n\n{suggestions}"
+
+
+def get_followup_suggestions(intent: str) -> str:
+    """Return a short, user-friendly string of follow-up suggestions based on detected intent."""
+    common = {
+        "greeting": [
+            "Browse new arrivals",
+            "Search for a product (e.g. 'red dress')",
+            "View my orders"
+        ],
+        "product": [
+            "Show me similar products",
+            "Filter by price or rating",
+            "Do you have this in a different size or color?"
+        ],
+        "order": [
+            "Track my order (provide order number)",
+            "Where is my delivery?",
+            "Initiate a return"
+        ],
+        "payment": [
+            "Help with payment methods",
+            "Apply a promo code",
+            "Is my payment secure?"
+        ],
+        "return": [
+            "Start a return for an order",
+            "Check refund status",
+            "Contact support about returns"
+        ],
+        "account": [
+            "Update my shipping address",
+            "Change my password",
+            "View order history"
+        ],
+        "support": [
+            "Contact customer support",
+            "Open a support ticket",
+            "Report a problem with an order"
+        ],
+        "gratitude": [
+            "You're welcome — anything else?",
+            "Search for products",
+            "View your account"
+        ],
+        "default": [
+            "Search for products (e.g. 'leather boots')",
+            "Track an order (provide order number)",
+            "Ask about returns or refunds"
+        ]
+    }
+
+    picks = common.get(intent, common["default"])
+    # Format as a short sentence with examples separated by " • " for compactness
+    return "You can try: " + " • ".join(picks)
 
 def get_chatbot_response(user_query: str, session_id: str = "default_user") -> str:
     """Generates a response to a user query using Google Gemini API, maintaining conversation history.

@@ -18,27 +18,60 @@ TEST_DATABASE_URL = "sqlite:///./test_marketplace.db"
 @pytest.fixture(scope="session")
 def test_engine():
     """Create test database engine"""
+    # Ensure a clean test database file. If a previous run left the file behind
+    # remove it before creating the engine so tests start from a fresh DB.
+    db_file = "./test_marketplace.db"
+    if os.path.exists(db_file):
+        try:
+            os.remove(db_file)
+        except Exception:
+            # If the file is in use, try to proceed (create_engine will still open),
+            # but tests may fail; we keep this best-effort cleanup here.
+            pass
+
     engine = create_engine(
         TEST_DATABASE_URL,
         connect_args={"check_same_thread": False}
     )
+    # Create tables fresh for the test session
     Base.metadata.create_all(bind=engine)
     yield engine
+    # Dispose engine connections before dropping and removing file to avoid
+    # PermissionError on Windows when the SQLite file is still locked.
+    try:
+        engine.dispose()
+    except Exception:
+        pass
     Base.metadata.drop_all(bind=engine)
     # Clean up test database file
-    if os.path.exists("./test_marketplace.db"):
-        os.remove("./test_marketplace.db")
+    db_file = "./test_marketplace.db"
+    if os.path.exists(db_file):
+        try:
+            os.remove(db_file)
+        except Exception:
+            # If removal fails, leave the file; subsequent test runs will attempt
+            # best-effort cleanup at startup.
+            pass
 
 @pytest.fixture(scope="function")
 def test_db(test_engine):
     """Create test database session"""
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    # Use a connection + transaction per test so we can rollback all changes after
+    # the test and keep the database clean between tests.
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=connection)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
-        db.rollback()
         db.close()
+        # Rollback the broader transaction to undo any commits
+        try:
+            transaction.rollback()
+        except Exception:
+            pass
+        connection.close()
 
 @pytest.fixture(scope="function")
 def client(test_db):

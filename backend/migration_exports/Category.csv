@@ -1,0 +1,32 @@
+id,name,slug,description,parent_id,is_active,created_at
+1,Electronics,electronics,Electronic devices and gadgets,,True,2025-09-17 08:45:32
+2,Clothing,clothing,Fashion and apparel,,True,2025-09-17 08:45:32
+3,Books,books,Books and literature,,True,2025-09-17 08:45:32
+4,Home & Garden,home-garden,Home improvement and gardening,,True,2025-09-17 08:45:32
+5,Sports,sports,Sports and outdoor equipment,,True,2025-09-17 08:45:32
+6,Toys,toys,Toys and games,,True,2025-09-17 08:45:32
+7,Computers,computers,"Desktops, laptops, and accessories",,True,2025-11-05 13:27:04
+8,Watches,watches,Wrist watches and smartwatches,,True,2025-11-05 13:27:04
+9,Photography,photography,Cameras and photography gear,,True,2025-11-05 13:27:04
+10,Audio,audio,"Speakers, headphones, and audio equipment",,True,2025-11-05 13:27:04
+11,Beauty,beauty,Beauty and personal care,,True,2025-11-05 13:27:04
+12,Health,health,Health and wellness products,,True,2025-11-05 13:27:04
+13,Groceries,groceries,Food and grocery items,,True,2025-11-05 13:27:04
+14,Automotive,automotive,Car accessories and parts,,True,2025-11-05 13:27:04
+15,Jewelry,jewelry,Jewelry and accessories,,True,2025-11-05 13:27:04
+16,Baby & Kids,baby-kids,Baby and kids products,,True,2025-11-05 13:27:04
+17,Office Supplies,office-supplies,Office and school supplies,,True,2025-11-05 13:27:04
+18,Pet Supplies,pet-supplies,Pet food and accessories,,True,2025-11-05 13:27:04
+19,Garden,garden,Gardening tools and plants,,True,2025-11-05 13:27:04
+20,Furniture,furniture,Home and office furniture,,True,2025-11-05 13:27:04
+21,Footwear,footwear,"Shoes, sandals, and boots",,True,2025-11-05 13:27:04
+22,Bags & Luggage,bags-luggage,"Bags, backpacks, and luggage",,True,2025-11-05 13:27:04
+23,Musical Instruments,musical-instruments,Instruments and music gear,,True,2025-11-05 13:27:04
+24,Crafts,crafts,Arts and crafts supplies,,True,2025-11-05 13:27:04
+25,Travel,travel,Travel accessories and gear,,True,2025-11-05 13:27:04
+26,Appliances,appliances,Home and kitchen appliances,,True,2025-11-05 13:27:04
+27,Stationery,stationery,Stationery and writing supplies,,True,2025-11-05 13:27:04
+28,Outdoor,outdoor,Outdoor and camping gear,,True,2025-11-05 13:27:04
+29,Mobile Accessories,mobile-accessories,"Phone cases, chargers, and more",,True,2025-11-05 13:27:04
+30,Gaming,gaming,Video games and gaming accessories,,True,2025-11-05 13:27:04
+31,Home Decor,home-decor,Decorative items for home,,True,2025-11-05 13:27:04

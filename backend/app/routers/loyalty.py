@@ -18,7 +18,7 @@ def get_loyalty_dashboard(
     Returns:
     - Loyalty account details with points balance and tier
     - Recent transactions (last 10)
-    - Active redemptions
+    - Active redemptions (used/expired rewards hidden after 3 days)
     - Next tier information and points needed
     """
     # Get or create loyalty account
@@ -31,8 +31,8 @@ def get_loyalty_dashboard(
     account_id = int(account.id)  # type: ignore
     transactions = crud.get_points_transactions(db, account_id, limit=10)
     
-    # Get active redemptions
-    redemptions = crud.get_redemptions(db, account_id, status="active", limit=10)
+    # Get redemptions (used/expired older than 3 days are automatically filtered out)
+    redemptions = crud.get_redemptions(db, account_id, status=None, limit=50, include_old_used_expired=False)
     
     # Calculate next tier info
     tiers = crud.get_reward_tiers(db)

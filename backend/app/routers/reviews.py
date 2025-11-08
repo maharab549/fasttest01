@@ -79,5 +79,29 @@ def create_review(
     current_user: schemas.User = Depends(auth.get_current_active_user)
 ):
     """Create a new review for a product"""
-    
-    # ...existing code...
+    # Validate product exists
+    product = crud.get_product(db=db, product_id=review.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # If order_id provided, validate the order belongs to the user and is delivered
+    if review.order_id:
+        order = crud.get_order(db=db, order_id=review.order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if int(order.user_id) != int(current_user.id):
+            raise HTTPException(status_code=403, detail="Not authorized to review this order")
+        if order.status != "delivered":
+            raise HTTPException(status_code=400, detail="Only delivered orders can be reviewed")
+
+    # Prevent duplicate reviews for same product by same user
+    existing = db.query(models.Review).filter(
+        models.Review.user_id == current_user.id,
+        models.Review.product_id == review.product_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="You have already reviewed this product")
+
+    # Create review
+    created = crud.create_review(db=db, review=review, user_id=current_user.id)
+    return created

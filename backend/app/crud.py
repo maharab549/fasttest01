@@ -7,6 +7,21 @@ import uuid
 from datetime import datetime
 
 
+# ProductImage CRUD
+def create_product_image(db: Session, product_id: int, image_url: str, alt_text: str = None, is_primary: bool = False, sort_order: int = 0) -> models.ProductImage:
+    db_image = models.ProductImage(
+        product_id=product_id,
+        image_url=image_url,
+        alt_text=alt_text,
+        is_primary=is_primary,
+        sort_order=sort_order
+    )
+    db.add(db_image)
+    db.commit()
+    db.refresh(db_image)
+    return db_image
+
+
 # User CRUD
 def get_user(db: Session, user_id: int) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.id == user_id).first()
@@ -111,6 +126,9 @@ def get_products(
     # Only show approved products to customers (not admin/seller views)
     query = query.filter(models.Product.approval_status == "approved")
     
+    # Eager load seller to prevent N+1 queries
+    query = query.options(joinedload(models.Product.seller))
+    
     # Apply filters
     if search:
         if semantic_search:
@@ -151,13 +169,23 @@ def get_product(db: Session, product_id: int) -> Optional[models.Product]:
 
 def get_product_by_slug(db: Session, slug: str) -> Optional[models.Product]:
     return db.query(models.Product).options(
-        joinedload(models.Product.seller),
-        joinedload(models.Product.variants)
+        joinedload(models.Product.seller)
+        # TODO: Re-enable when product_variants table schema is fully migrated
+        # joinedload(models.Product.variants)
     ).filter(models.Product.slug == slug).first()
 
 
 def get_products_by_seller(db: Session, seller_id: int, skip: int = 0, limit: int = 100) -> List[models.Product]:
     return db.query(models.Product).filter(models.Product.seller_id == seller_id).offset(skip).limit(limit).all()
+
+
+def get_featured_products(db: Session, limit: int = 8) -> List[models.Product]:
+    """Get featured products that are active and approved"""
+    return db.query(models.Product).filter(
+        models.Product.is_featured == True,
+        models.Product.is_active == True,
+        models.Product.approval_status == "approved"
+    ).limit(limit).all()
 
 
 def create_product(db: Session, product: schemas.ProductCreate, seller_id: int) -> models.Product:
@@ -200,6 +228,36 @@ def increment_product_view_count(db: Session, product_id: int) -> Optional[model
             # Log a warning if the field is missing, but continue
             # In a real app, this would be a proper log, but here a print will suffice
             print(f"Warning: 'view_count' attribute not found on product {product_id}. Skipping increment.")
+    return db_product
+
+
+def get_pending_products(db: Session, skip: int = 0, limit: int = 100) -> List[models.Product]:
+    """Get all pending products waiting for admin approval"""
+    return db.query(models.Product).filter(
+        models.Product.approval_status == "pending"
+    ).order_by(models.Product.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def approve_product(db: Session, product_id: int, admin_user_id: int) -> Optional[models.Product]:
+    """Approve a product by admin"""
+    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if db_product:
+        db_product.approval_status = "approved"
+        db_product.approved_at = datetime.utcnow()
+        db_product.approved_by = admin_user_id
+        db.commit()
+        db.refresh(db_product)
+    return db_product
+
+
+def reject_product(db: Session, product_id: int, reason: str) -> Optional[models.Product]:
+    """Reject a product by admin with a reason"""
+    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if db_product:
+        db_product.approval_status = "rejected"
+        db_product.rejection_reason = reason
+        db.commit()
+        db.refresh(db_product)
     return db_product
 
 
@@ -331,6 +389,7 @@ def get_orders_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 10
     return db.query(models.Order)\
              .filter(models.Order.user_id == user_id)\
              .options(joinedload(models.Order.order_items).joinedload(models.OrderItem.product))\
+             .order_by(desc(models.Order.created_at))\
              .offset(skip).limit(limit).all()
 
 
@@ -475,6 +534,7 @@ def get_returns_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 1
     return db.query(models.Return)\
              .filter(models.Return.user_id == user_id)\
              .options(joinedload(models.Return.return_items))\
+             .order_by(desc(models.Return.created_at))\
              .offset(skip).limit(limit).all()
 
 
@@ -530,6 +590,7 @@ def get_all_returns(db: Session, skip: int = 0, limit: int = 100) -> List[models
     """Get all returns (for admin)"""
     return db.query(models.Return)\
              .options(joinedload(models.Return.return_items))\
+             .order_by(desc(models.Return.created_at))\
              .offset(skip).limit(limit).all()
 
 
@@ -748,17 +809,59 @@ def get_redemptions(
     loyalty_account_id: int,
     status: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 50,
+    include_old_used_expired: bool = False
 ) -> List[models.Redemption]:
-    """Get redemptions for a loyalty account"""
+    """
+    Get redemptions for a loyalty account
+    
+    By default, hides 'used' and 'expired' rewards that are older than 3 days.
+    Set include_old_used_expired=True to show all rewards regardless of age.
+    """
+    from datetime import datetime, timedelta
+    
     query = db.query(models.Redemption)\
         .filter(models.Redemption.loyalty_account_id == loyalty_account_id)
     
     if status:
         query = query.filter(models.Redemption.status == status)
     
-    return query.order_by(desc(models.Redemption.created_at))\
-        .offset(skip).limit(limit).all()
+    # Get all results first, then filter by date
+    all_redemptions = query.order_by(desc(models.Redemption.created_at)).all()
+    
+    # Filter out used/expired rewards older than 3 days
+    if not include_old_used_expired:
+        three_days_ago = datetime.utcnow() - timedelta(days=3)
+        filtered = []
+        
+        for redemption in all_redemptions:
+            status_val = getattr(redemption, "status", None)
+            
+            # Keep 'active' rewards always
+            if status_val == "active":
+                filtered.append(redemption)
+                continue
+            
+            # For 'used' and 'expired', check the timestamp
+            if status_val in ["used", "expired"]:
+                # Check which timestamp to use
+                timestamp = getattr(redemption, "used_at", None)
+                if not timestamp:
+                    timestamp = getattr(redemption, "expires_at", None)
+                if not timestamp:
+                    timestamp = getattr(redemption, "created_at", None)
+                
+                # Only keep if newer than 3 days
+                if timestamp and timestamp > three_days_ago:
+                    filtered.append(redemption)
+            else:
+                # Keep any other status
+                filtered.append(redemption)
+        
+        all_redemptions = filtered
+    
+    # Apply pagination
+    return all_redemptions[skip:skip + limit]
 
 
 def use_redemption(db: Session, redemption_id: int, order_id: Optional[int] = None) -> models.Redemption:
@@ -822,15 +925,90 @@ def process_referral(db: Session, referral_code: str, new_user_id: int) -> bool:
 
 # Withdrawal CRUD
 def create_withdrawal_request(db: Session, seller_id: int, amount: float) -> models.WithdrawalRequest:
+    # snapshot seller payout info for audit
+    seller = db.query(models.Seller).filter(models.Seller.id == seller_id).first()
+    payout_snapshot = None
+    if seller:
+        payout_snapshot = {
+            "payout_method": getattr(seller, "payout_method", None),
+            "bank_name": getattr(seller, "bank_name", None),
+            "bank_account_name": getattr(seller, "bank_account_name", None),
+            "bank_account_number": getattr(seller, "bank_account_number", None),
+            "bank_routing_number": getattr(seller, "bank_routing_number", None),
+            "paypal_email": getattr(seller, "paypal_email", None)
+        }
+
     withdrawal = models.WithdrawalRequest(
         seller_id=seller_id,
         amount=amount,
-        status="pending"
+        status="pending",
+        payout_snapshot=payout_snapshot
     )
     db.add(withdrawal)
     db.commit()
     db.refresh(withdrawal)
     return withdrawal
+
+
+def approve_withdrawal(db: Session, withdrawal_id: int, admin_user_id: int) -> Optional[models.WithdrawalRequest]:
+    db_withdrawal = db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.id == withdrawal_id).first()
+    if not db_withdrawal:
+        return None
+    if db_withdrawal.status != "pending":
+        return None
+    db_withdrawal.status = "approved"
+    db.commit()
+    db.refresh(db_withdrawal)
+    return db_withdrawal
+
+
+def process_withdrawal_payout(db: Session, withdrawal_id: int, admin_user_id: int) -> Optional[models.WithdrawalRequest]:
+    """Simulate processing a payout: mark withdrawal as 'paid', set paid_at and payout_reference."""
+    db_withdrawal = db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.id == withdrawal_id).first()
+    if not db_withdrawal:
+        return None
+    if db_withdrawal.status not in ("approved", "pending"):
+        # already processed or rejected
+        return None
+
+    # Simulate external transfer success
+    import uuid
+    payout_ref = f"PAYOUT-{uuid.uuid4().hex[:12].upper()}"
+
+    # mark as paid and record reference
+    db_withdrawal.status = "paid"
+    db_withdrawal.payout_reference = payout_ref
+    from datetime import datetime
+    db_withdrawal.paid_at = datetime.now()
+
+    # Optionally, record in seller ledger or external system here
+    db.commit()
+    db.refresh(db_withdrawal)
+    return db_withdrawal
+
+
+def get_withdrawal(db: Session, withdrawal_id: int) -> Optional[models.WithdrawalRequest]:
+    return db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.id == withdrawal_id).first()
+
+
+def cancel_withdrawal(db: Session, withdrawal_id: int) -> Optional[models.WithdrawalRequest]:
+    """Cancel a pending withdrawal and refund the seller's balance."""
+    db_withdrawal = db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.id == withdrawal_id).first()
+    if not db_withdrawal:
+        return None
+    if db_withdrawal.status != "pending":
+        # Only pending withdrawals can be cancelled
+        return None
+    # Refund seller
+    seller = db.query(models.Seller).filter(models.Seller.id == db_withdrawal.seller_id).first()
+    if seller:
+        seller.balance = (seller.balance or 0.0) + (db_withdrawal.amount or 0.0)
+    db_withdrawal.status = "cancelled"
+    db.commit()
+    db.refresh(db_withdrawal)
+    if seller:
+        db.refresh(seller)
+    return db_withdrawal
 
 def get_withdrawal_requests_by_seller(db: Session, seller_id: int) -> list[models.WithdrawalRequest]:
     return db.query(models.WithdrawalRequest).filter(models.WithdrawalRequest.seller_id == seller_id).order_by(models.WithdrawalRequest.created_at.desc()).all()
@@ -859,3 +1037,14 @@ def reject_product(db: Session, product_id: int, reason: str) -> Optional[models
 
 def get_pending_products(db: Session, skip: int = 0, limit: int = 100) -> List[models.Product]:
     return db.query(models.Product).filter(models.Product.approval_status == "pending").offset(skip).limit(limit).all()
+
+def update_product_images(db: Session, product_id: int, images: list[int]):
+    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if not product:
+        raise ValueError("Product not found")
+
+    # Assuming `images` is a list of image IDs
+    product.images = images  # Store only the IDs
+    db.commit()
+    db.refresh(product)
+    return product

@@ -154,7 +154,7 @@ def get_conversations(
                 "full_name": partner_user.full_name,
                 "username": partner_user.username,
                 "email": partner_user.email,
-                "avatar": None,  # Add avatar field if available in User model
+                "avatar": None,  # Add avatar 
                 "is_seller": partner_user.is_seller
             },
             "last_message": {
@@ -165,7 +165,7 @@ def get_conversations(
                 "is_read": latest_message.is_read
             } if latest_message else None,
             "unread_count": unread_count,
-            "related_product": None  # Add if needed
+            "related_product": None  # will add later
         }
         
         conversations.append(conversation_data)

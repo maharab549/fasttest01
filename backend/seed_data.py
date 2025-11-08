@@ -277,6 +277,8 @@ def create_sample_data():
         for product_data in products_data:
             existing_product = db.query(models.Product).filter(models.Product.sku == product_data["sku"]).first()
             if not existing_product:
+                # Automatically approve sample products for development
+                product_data["approval_status"] = "approved"
                 product = models.Product(**product_data)
                 db.add(product)
         

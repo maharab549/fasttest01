@@ -11,7 +11,7 @@ from . import db_migrations
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants
+    sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants, product_variants
 )
 from .ws_redis import bridge
 from .security_middleware import (
@@ -66,13 +66,23 @@ frontend_origins = [
     "http://192.168.56.1:5173"
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=frontend_origins,  # ⚡ Must match your frontend URLs
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# During development, allow all origins for convenience. In production keep a tight allowlist.
+if settings.debug:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=frontend_origins,  # ⚡ Must match your frontend URLs
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Trusted hosts
 app.add_middleware(
@@ -80,6 +90,8 @@ app.add_middleware(
     allowed_hosts=[
         "localhost",
         "127.0.0.1",
+        # TestClient uses host 'testserver' during pytest runs
+        "testserver",
         "*.vercel.app",
         "*.onrender.com",
         "megamartcom.netlify.app"
@@ -99,14 +111,24 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, chatbot, returns, loyalty, health, variants
+    sms, reviews, chatbot, returns, loyalty, health, variants, product_variants
 ]
 
 for router in routers:
+    # Only include routers under /api/v1 to avoid duplicate route registration and route conflicts
     app.include_router(router.router, prefix="/api/v1")
 
 # WebSocket router
 app.include_router(ws_messages.router)
+
+# Debug: Print all registered routes at startup
+def print_routes(app):
+    print("\n=== FastAPI Registered Routes ===")
+    for route in app.routes:
+        print(f"{route.path} -> {getattr(route, 'endpoint', None)}")
+    print("=== END ROUTES ===\n")
+
+print_routes(app)
 
 # ----------------------------------------------------------------
 # Redis Bridge
@@ -115,14 +137,18 @@ app.include_router(ws_messages.router)
 async def startup_events():
     # Lightweight, idempotent DB migrations for local SQLite/dev
     try:
+        print("Running DB migrations...")
         db_migrations.run_all(engine)
-    except Exception:
-        pass
+        print("[OK] DB migrations completed")
+    except Exception as e:
+        print(f"[WARNING] DB migrations error (non-fatal): {e}")
     # Initialize Redis bridge (best-effort)
-    try:
-        await bridge.init()
-    except Exception:
-        pass
+    #try:
+    #    print("Initializing Redis bridge...")
+    #    await bridge.init()
+    #    print("[OK] Redis bridge initialized")
+    #except Exception as e:
+    #    print(f"[WARNING] Redis bridge error (non-fatal): {e}")
 
 @app.on_event("shutdown")
 async def shutdown_events():
@@ -147,6 +173,12 @@ def read_root():
 def health_check():
     return {"status": "healthy", "message": "MegaMart API is running securely"}
 
+
+# Backwards-compatible aliases for older clients/scripts that use /api/*
+@app.get("/api/health")
+def health_check_alias():
+    return health_check()
+
 @app.get("/api/v1/test_frontend")
 async def test_frontend(request: Request):
     client_host = request.client.host if request.client else "unknown"
@@ -157,6 +189,29 @@ async def test_frontend(request: Request):
         "client_ip": client_host,
         "protocol": scheme,
         "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+@app.get("/api/test_frontend")
+async def test_frontend_alias(request: Request):
+    return await test_frontend(request)
+
+@app.get("/api/v1/debug/image-test/{product_id}")
+def debug_image_test(product_id: int):
+    """Test endpoint to verify image file exists and is accessible"""
+    import os
+    from pathlib import Path
+    
+    image_path = f"uploads/products/product_{product_id}.png"
+    full_path = Path(image_path)
+    
+    return {
+        "product_id": product_id,
+        "image_path": image_path,
+        "file_exists": full_path.exists(),
+        "file_size": full_path.stat().st_size if full_path.exists() else None,
+        "absolute_path": str(full_path.absolute()),
+        "image_url": f"/uploads/products/product_{product_id}.png"
     }
 
 # ----------------------------------------------------------------

@@ -1,0 +1,2 @@
+id,loyalty_account_id,redemption_type,points_redeemed,reward_value,reward_code,status,order_id,expires_at,used_at,created_at
+1,1,free_shipping,300,10.0,FREE-3A9C38CD,active,,2026-02-03 23:38:55.052733,,2025-11-05 15:38:55

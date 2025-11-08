@@ -58,7 +58,11 @@ def get_user(db: Session, username: str) -> Optional[User]:
 
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    # Allow login using either username or email
     user = get_user(db, username)
+    if not user:
+        # try email
+        user = db.query(User).filter(User.email == username).first()
     if not user or not verify_password(password, user.hashed_password):
         return None
     return user

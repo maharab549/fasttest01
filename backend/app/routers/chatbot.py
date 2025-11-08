@@ -14,7 +14,6 @@ def ask_chatbot(
 ):
     """Send a query to the AI chatbot and get a response."""
     # Use the client's IP address as a simple, anonymous session ID for conversation history
-    # In a real application, this would be the authenticated user's ID.
     session_id = request.client.host if request.client else "anonymous_user"
 
     try:

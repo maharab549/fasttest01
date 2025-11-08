@@ -65,7 +65,57 @@ def get_seller_products(
     
     # Get products with pagination
     products = query.offset(skip).limit(limit).all()
-    return products
+    
+    # Convert image IDs to URLs (same logic as get_product endpoint)
+    from ..models import ProductImage
+    result = []
+    for product in products:
+        product_dict = {
+            "id": product.id,
+            "seller_id": product.seller_id,
+            "category_id": product.category_id,
+            "title": product.title,
+            "slug": product.slug,
+            "description": product.description,
+            "short_description": product.short_description,
+            "price": product.price,
+            "compare_price": product.compare_price,
+            "sku": product.sku,
+            "inventory_count": product.inventory_count,
+            "weight": product.weight,
+            "dimensions": product.dimensions,
+            "images": [],
+            "is_active": product.is_active,
+            "is_featured": product.is_featured,
+            "has_variants": product.has_variants,
+            "rating": product.rating,
+            "review_count": product.review_count,
+            "view_count": product.view_count,
+            "created_at": product.created_at,
+            "updated_at": product.updated_at,
+            "approval_status": product.approval_status,
+            "rejection_reason": product.rejection_reason,
+            "approved_at": product.approved_at,
+            "approved_by": product.approved_by,
+            "variants": product.variants or [],
+            "seller": product.seller,
+        }
+        
+        # Fetch actual image URLs from ProductImage table
+        if product.images is not None:
+            image_ids = product.images if isinstance(product.images, list) else []
+            try:
+                if len(image_ids) > 0:
+                    product_images = db.query(ProductImage).filter(
+                        ProductImage.id.in_(image_ids)
+                    ).all()
+                    product_dict["images"] = [img.image_url for img in product_images] if product_images else []
+            except Exception:
+                product_dict["images"] = []
+        
+        result.append(product_dict)
+    
+    return result
 
 
 @router.get("/orders", response_model=List[schemas.Order])
@@ -91,8 +141,7 @@ def get_seller_orders(
     ).options(
         joinedload(crud.models.Order.order_items).joinedload(crud.models.OrderItem.product),
         joinedload(crud.models.Order.user)
-    ).distinct().offset(skip).limit(limit).all()
-    
+    ).order_by(crud.models.Order.created_at.desc()).distinct().offset(skip).limit(limit).all()
     return orders
 
 
@@ -192,6 +241,20 @@ def get_seller_dashboard(
         except Exception:
             new_orders_since = 0
 
+    # Calculate available balance: 90% of total revenue after 10% commission
+    available_balance = total_revenue * 0.90
+    
+    # Subtract already withdrawn amounts (pending, approved, and paid)
+    already_withdrawn = db.query(
+        func.sum(crud.models.WithdrawalRequest.amount)
+    ).filter(
+        crud.models.WithdrawalRequest.seller_id == seller.id,
+        crud.models.WithdrawalRequest.status.in_(["pending", "approved", "paid"])
+    ).scalar() or 0
+    
+    # Remaining balance after deducting pending/approved withdrawals
+    remaining_balance = available_balance - already_withdrawn
+
     return {
         "seller_id": seller.id,
         "store_name": seller.store_name,
@@ -201,6 +264,7 @@ def get_seller_dashboard(
         "pending_orders": pending_orders,
         "new_orders_since": new_orders_since,
         "total_revenue": total_revenue,
+        "balance": remaining_balance,
         "rating": seller.rating,
         "total_sales": seller.total_sales,
         "is_verified": seller.is_verified
@@ -274,14 +338,137 @@ def request_withdrawal(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
-    seller_balance = getattr(seller, "balance", 0.0)
+    
     seller_id = getattr(seller, "id", 0)
-    if req.amount > seller_balance:
+    
+    # Ensure payout info exists
+    if not (seller.payout_method and (seller.payout_method == "paypal" and seller.paypal_email or seller.payout_method == "bank_transfer" and seller.bank_account_number)):
+        raise HTTPException(status_code=400, detail="Please add payout/bank information before requesting a withdrawal")
+
+    # Calculate available balance: 90% of total revenue after 10% commission
+    total_revenue = db.query(
+        func.sum(crud.models.OrderItem.total_price)
+    ).join(
+        crud.models.Product
+    ).filter(
+        crud.models.Product.seller_id == seller.id
+    ).scalar() or 0
+    
+    available_balance = total_revenue * 0.90
+    
+    # Subtract already withdrawn amounts (pending and approved)
+    already_withdrawn = db.query(
+        func.sum(crud.models.WithdrawalRequest.amount)
+    ).filter(
+        crud.models.WithdrawalRequest.seller_id == seller.id,
+        crud.models.WithdrawalRequest.status.in_(["pending", "approved", "paid"])
+    ).scalar() or 0
+    
+    remaining_balance = available_balance - already_withdrawn
+    
+    if req.amount > remaining_balance:
         raise HTTPException(status_code=400, detail="Insufficient balance")
+    
     withdrawal = crud.create_withdrawal_request(db=db, seller_id=seller_id, amount=req.amount)
-    setattr(seller, "balance", seller_balance - req.amount)
+    
+    # Update seller's balance column for tracking
+    seller.balance = remaining_balance - req.amount
     db.commit()
+    
     return withdrawal
+
+
+@router.get("/payout-info")
+def get_payout_info(
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_seller)
+):
+    """Get seller payout information"""
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller profile not found")
+    
+    return {
+        "payout_method": getattr(seller, "payout_method", None),
+        "bank_account_number": getattr(seller, "bank_account_number", None),
+        "bank_routing_number": getattr(seller, "bank_routing_number", None),
+        "bank_account_name": getattr(seller, "bank_account_name", None),
+        "bank_name": getattr(seller, "bank_name", None),
+        "paypal_email": getattr(seller, "paypal_email", None),
+        "stripe_email": getattr(seller, "stripe_email", None),
+    }
+
+
+@router.put("/payout-info")
+def update_payout_info_put(
+    payout: dict,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_seller)
+):
+    """Update seller payout information (bank or paypal). Example payload:
+    {"method_type": "bank_transfer", "bank_code": "SWIFT_CODE", "account_holder_name": "John Doe", "bank_account": "IBAN", "email": "seller@example.com"}
+    or
+    {"method_type": "paypal", "email": "seller@paypal.com"}
+    or
+    {"method_type": "stripe", "email": "seller@stripe.com"}
+    """
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller profile not found")
+
+    # Map frontend field names to backend field names
+    method_type = payout.get("method_type", "bank_transfer")
+    
+    # Validate method type
+    if method_type not in ("bank_transfer", "paypal", "stripe"):
+        raise HTTPException(status_code=400, detail="Invalid payment method type")
+    
+    # Set payout method
+    setattr(seller, "payout_method", method_type)
+    
+    if method_type == "bank_transfer":
+        # Validate required fields
+        if not all([payout.get("bank_account"), payout.get("bank_code"), payout.get("account_holder_name")]):
+            raise HTTPException(status_code=400, detail="Bank transfer requires bank_account, bank_code, and account_holder_name")
+        
+        setattr(seller, "bank_account_number", payout.get("bank_account"))
+        setattr(seller, "bank_routing_number", payout.get("bank_code"))
+        setattr(seller, "bank_account_name", payout.get("account_holder_name"))
+        
+    elif method_type in ("paypal", "stripe"):
+        if not payout.get("email"):
+            raise HTTPException(status_code=400, detail=f"{method_type.capitalize()} requires email")
+        
+        if method_type == "paypal":
+            setattr(seller, "paypal_email", payout.get("email"))
+        else:  # stripe
+            setattr(seller, "stripe_email", payout.get("email"))
+    
+    db.commit()
+    db.refresh(seller)
+    return {"message": "Payment method updated successfully", "payout_method": method_type}
+
+
+
+@router.put("/withdraw/{withdrawal_id}/cancel")
+def cancel_withdrawal_endpoint(
+    withdrawal_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_seller)
+):
+    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller profile not found")
+
+    # Ensure the withdrawal belongs to this seller
+    wd = crud.get_withdrawal(db=db, withdrawal_id=withdrawal_id)
+    if not wd or wd.seller_id != seller.id:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+
+    cancelled = crud.cancel_withdrawal(db=db, withdrawal_id=withdrawal_id)
+    if not cancelled:
+        raise HTTPException(status_code=400, detail="Unable to cancel withdrawal (maybe already processed)")
+    return cancelled
 
 
 @router.get("/withdrawals", response_model=list[schemas.WithdrawalRequest])

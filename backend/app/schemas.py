@@ -47,6 +47,35 @@ class User(UserBase):
         from_attributes = True
 
 
+# Password Reset Schemas
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password: str
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+
+
+class PasswordResetToken(BaseModel):
+    id: int
+    user_id: int
+    token: str
+    is_used: bool
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 # Seller Schemas
 class SellerBase(BaseModel):
     store_name: str
@@ -64,6 +93,12 @@ class Seller(SellerBase):
     is_verified: bool
     rating: float
     total_sales: int
+    payout_method: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_routing_number: Optional[str] = None
+    paypal_email: Optional[str] = None
     created_at: datetime
     
     class Config:
@@ -143,13 +178,36 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# Product Image Schemas (NEW)
+class ProductImageBase(BaseModel):
+    image_url: str
+    alt_text: Optional[str] = None
+    is_primary: bool = False
+    sort_order: int = 0
+
+
+class ProductImageCreate(ProductImageBase):
+    pass
+
+
+class ProductImage(ProductImageBase):
+    id: int
+    product_id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 # Product Variant Schemas
 class ProductVariantBase(BaseModel):
     color: Optional[str] = None
     size: Optional[str] = None
     material: Optional[str] = None
     style: Optional[str] = None
-    other_attributes: Optional[str] = None  # JSON string
+    storage: Optional[str] = None  # e.g., "256GB", "512GB" for electronics
+    ram: Optional[str] = None  # e.g., "8GB", "16GB" for electronics
+    other_attributes: Optional[str] = None  # JSON string for custom attributes
     price_adjustment: float = 0.0
     inventory_count: int = 0
     images: Optional[List[str]] = None
@@ -166,6 +224,8 @@ class ProductVariantUpdate(BaseModel):
     size: Optional[str] = None
     material: Optional[str] = None
     style: Optional[str] = None
+    storage: Optional[str] = None
+    ram: Optional[str] = None
     other_attributes: Optional[str] = None
     price_adjustment: Optional[float] = None
     inventory_count: Optional[int] = None
@@ -180,6 +240,7 @@ class ProductVariant(ProductVariantBase):
     variant_name: Optional[str] = None
     is_active: bool
     created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -264,6 +325,7 @@ class OrderBase(BaseModel):
 
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]
+    discount_code: Optional[str] = None  # Optional discount/coupon code to apply
 
 
 class Order(OrderBase):
@@ -601,8 +663,11 @@ class WithdrawalRequest(WithdrawalRequestBase):
     id: int
     seller_id: int
     status: str
+    payout_reference: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    payout_snapshot: Optional[Dict[str, Any]] = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 

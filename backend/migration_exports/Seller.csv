@@ -1,0 +1,6 @@
+id,user_id,store_name,store_description,store_slug,is_verified,rating,total_sales,balance,payout_method,bank_name,bank_account_name,bank_account_number,bank_routing_number,paypal_email,stripe_email,created_at
+1,2,Tech Paradise,Your one-stop shop for all tech gadgets,tech-paradise,True,0.0,0,1286.7289999999998,paypal,,Test Seller,DE89370400440532013000,MARKDEFF,asdas@gmail.com,,2025-09-17 08:45:33
+2,3,Fashion Hub,Latest trends in fashion and style,fashion-hub,True,0.0,0,0.0,,,,,,,,2025-09-17 08:45:33
+3,4,Book Haven,Discover your next favorite book,book-haven,True,0.0,0,0.0,,,,,,,,2025-09-17 08:45:33
+4,8,TC Store,x,tc-store-8,True,0.0,0,0.0,,,,,,,,2025-11-07 04:20:19
+5,9,Test Seller's Store,Welcome to Test Seller's store!,test_seller,True,0.0,0,0.0,,,,,,,,2025-11-07 04:41:06

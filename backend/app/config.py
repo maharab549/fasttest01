@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = "default-gemini-key"
     groq_api_key: str | None = None
     
+    # Email Configuration
+    smtp_server: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str = ""  # Your email
+    smtp_password: str = ""  # Your app password (not regular password)
+    sender_email: str = ""   # Sender email address
+    sender_name: str = "MeghaMart"
+    
     # CORS
     cors_origins: List[str] = []
 

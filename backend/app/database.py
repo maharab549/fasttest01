@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine
+from typing import Any, Dict
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from .config import settings
@@ -21,10 +22,13 @@ elif selected_url.startswith("postgresql"):
     # Shorten initial failure if host is unreachable (e.g., DNS issue)
     conn_args = {"connect_timeout": 10}
 
+engine_kwargs: Dict[str, Any] = {"pool_pre_ping": True, "connect_args": conn_args}
+if selected_url.startswith("postgresql"):
+    engine_kwargs.update({"pool_size": 5, "max_overflow": 10})
+
 engine = create_engine(
     selected_url,
-    pool_pre_ping=True,
-    connect_args=conn_args,
+    **engine_kwargs,
 )
 
 # Create SessionLocal class for database sessions

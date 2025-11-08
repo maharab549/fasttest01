@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
-from typing import Dict, Any
+from typing import Dict, Any, cast
 from datetime import datetime, timedelta
 from .. import auth, schemas, models
 from ..database import get_db
@@ -55,15 +55,28 @@ def get_system_health(
         db.execute(text("SELECT 1"))
         db_latency = (time.time() - db_start) * 1000  # Convert to ms
         
-        # Get database size (SQLite specific)
-        db_size_result = db.execute(text("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")).fetchone()
-        db_size_bytes = db_size_result[0] if db_size_result else 0
+        # Dialect-aware metadata queries
+        bind = db.get_bind()
+        dialect_name = getattr(getattr(bind, 'dialect', None), 'name', '') if bind else ''
         
-        # Get table counts
-        tables_result = db.execute(text("""
-            SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
-        """)).fetchall()
-        table_count = len(tables_result)
+        if dialect_name.startswith("postgresql"):
+            # Database size
+            db_size_bytes = db.execute(text("SELECT pg_database_size(current_database())")).scalar() or 0
+            # Table count in public schema
+            tables_result = db.execute(text("""
+                SELECT table_name FROM information_schema.tables 
+                WHERE table_schema = 'public'
+            """)).fetchall()
+            table_count = len(tables_result)
+        else:
+            # Default to SQLite-compatible queries
+            db_size_result = db.execute(text("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")).fetchone()
+            db_size_bytes = db_size_result[0] if db_size_result else 0
+            tables_result = db.execute(text("""
+                SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            """
+            )).fetchall()
+            table_count = len(tables_result)
         
         # Get record counts for key tables
         try:
@@ -123,14 +136,18 @@ def get_system_health(
     process_memory = process.memory_info().rss
     process_cpu = process.cpu_percent(interval=0.1)
     
-    # System load average (Unix-like systems only)
+    # System load average
     try:
-        load_avg = os.getloadavg()
-        load_average = {
-            "1min": round(load_avg[0], 2),
-            "5min": round(load_avg[1], 2),
-            "15min": round(load_avg[2], 2)
-        }
+        getloadavg = getattr(os, "getloadavg", None)
+        if callable(getloadavg):
+            load_avg = cast(tuple[float, float, float], getloadavg())
+            load_average = {
+                "1min": round(load_avg[0], 2),
+                "5min": round(load_avg[1], 2),
+                "15min": round(load_avg[2], 2)
+            }
+        else:
+            load_average = None
     except (AttributeError, OSError):
         load_average = None
     
@@ -216,7 +233,7 @@ def get_system_metrics(
         raise HTTPException(status_code=403, detail="Admin access required")
     
     # This could be extended to track metrics over time
-    # For now, return current snapshot
+    # i will update it later in winter vacation
     health_data = get_system_health(current_user, db)
     
     return {

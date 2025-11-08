@@ -1,0 +1,164 @@
+id,user_id,title,message,type,related_order_id,is_read,created_at
+1,1,New message from John Doe Updated,Subject: None,new_message,,True,2025-09-23 13:09:32
+2,1,Welcome to Marketplace!,Thank you for joining our premium marketplace. Start exploring amazing products from verified sellers.,welcome,,True,2025-09-23 09:36:16.328550
+3,1,Order Confirmation,Your order #12345 has been confirmed and is being processed by the seller.,order,,True,2025-09-23 09:36:16.328612
+4,1,Product Added to Favorites,The Smart Bluetooth Speaker has been added to your favorites list.,favorite,,True,2025-09-23 09:36:16.328638
+5,1,New Message,You have received a new message from seller TechStore regarding your inquiry.,message,,True,2025-09-23 09:36:16.328655
+6,1,Price Drop Alert,Good news! The Wireless Charger in your wishlist is now 20% off.,price_drop,,True,2025-09-23 09:36:16.328669
+7,2,New message from Tech Store Owner,Subject: dgfcvgdf,message,,True,2025-09-25 18:24:37
+8,2,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-09-25 18:24:52
+9,2,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-09-25 18:25:01
+10,4,New message from John Doe Updated,Subject: wesdf,message,,True,2025-09-25 18:25:52
+11,4,New message from John Doe Updated,Subject: Message about General inquiry,message,,True,2025-09-25 18:26:10
+12,1,New message from John Doe Updated,Subject: Message about General inquiry,message,,True,2025-09-25 18:26:16
+13,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-25 18:26:35
+14,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-25 18:26:40
+15,5,Order #ORD-0E0C134D Placed Successfully,Your order for $199.02 has been placed and is awaiting confirmation.,new_order,2,True,2025-09-25 18:30:08
+16,1,Order #ORD-404E917A Placed Successfully,Your order for $905.97 has been placed and is awaiting confirmation.,new_order,3,True,2025-09-30 06:57:28
+17,5,Order #ORD-0E0C134D Status Updated,Your order status has been updated to: Confirmed,order_update,2,True,2025-09-30 06:58:18
+18,5,Order #ORD-0E0C134D Status Updated,Your order status has been updated to: Processing,order_update,2,True,2025-09-30 06:58:19
+19,5,Order #ORD-0E0C134D Status Updated,Your order status has been updated to: Shipped,order_update,2,True,2025-09-30 06:58:20
+20,1,Order #ORD-404E917A Status Updated,Your order status has been updated to: Confirmed,order_update,3,True,2025-09-30 06:58:21
+21,1,Order #ORD-404E917A Status Updated,Your order status has been updated to: Processing,order_update,3,True,2025-09-30 06:58:22
+22,1,Order #ORD-404E917A Status Updated,Your order status has been updated to: Shipped,order_update,3,True,2025-09-30 06:58:22
+23,1,Order #ORD-404E917A Status Updated,Your order status has been updated to: Delivered,order_update,3,True,2025-09-30 06:58:22
+24,5,Order #ORD-0E0C134D Status Updated,Your order status has been updated to: Delivered,order_update,2,True,2025-09-30 06:58:24
+25,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-30 06:59:02
+26,1,New message from John Doe Updated,Subject: Message about General inquiry,message,,True,2025-09-30 07:01:36
+27,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-30 07:13:12
+28,1,New message from John Doe Updated,Subject: Message about General inquiry,message,,True,2025-09-30 07:13:33
+29,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-30 07:16:11
+30,1,New message from John Doe Updated,Subject: Message about General inquiry,message,,True,2025-09-30 07:16:22
+31,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-09-30 07:16:29
+32,1,Order #ORD-A45F39EA Placed Successfully,Your order for $905.97 has been placed and is awaiting confirmation.,new_order,4,True,2025-09-30 07:22:40
+33,1,Order #ORD-6B458D00 Placed Successfully,Your order for $199.02 has been placed and is awaiting confirmation.,new_order,5,True,2025-09-30 07:28:28
+34,5,Order #ORD-715B4873 Placed Successfully,Your order for $199.02 has been placed and is awaiting confirmation.,new_order,6,True,2025-09-30 14:47:17
+35,2,Order #ORD-35293E45 Placed Successfully,Your order for $1238.20 has been placed and is awaiting confirmation.,new_order,7,True,2025-09-30 15:20:31
+36,1,New message from John Doe,Subject: Message about General inquiry,message,,True,2025-10-03 14:52:37
+37,5,Order #ORD-0E82E146 Placed Successfully,Your order for $78.34 has been placed and is awaiting confirmation.,new_order,8,True,2025-10-03 14:58:52
+38,5,New message from Admin User,Subject: Message about General inquiry,message,,True,2025-10-03 15:00:45
+39,5,Order #ORD-3239A319 Status Updated,Your order status has been updated to: Processing,order_update,1,True,2025-10-03 15:02:05
+40,5,Order #ORD-3239A319 Status Updated,Your order status has been updated to: Shipped,order_update,1,True,2025-10-03 15:02:05
+41,5,Order #ORD-3239A319 Status Updated,Your order status has been updated to: Delivered,order_update,1,True,2025-10-03 15:02:05
+42,1,Order #ORD-A45F39EA Status Updated,Your order status has been updated to: Confirmed,order_update,4,True,2025-10-03 15:02:09
+43,1,Order #ORD-A45F39EA Status Updated,Your order status has been updated to: Processing,order_update,4,True,2025-10-03 15:02:09
+44,1,Order #ORD-6B458D00 Status Updated,Your order status has been updated to: Confirmed,order_update,5,True,2025-10-03 15:02:11
+45,1,Order #ORD-6B458D00 Status Updated,Your order status has been updated to: Processing,order_update,5,True,2025-10-03 15:02:12
+46,1,Order #ORD-6B458D00 Status Updated,Your order status has been updated to: Shipped,order_update,5,True,2025-10-03 15:02:12
+47,1,Order #ORD-6B458D00 Status Updated,Your order status has been updated to: Delivered,order_update,5,True,2025-10-03 15:02:12
+48,1,Order #ORD-A45F39EA Status Updated,Your order status has been updated to: Shipped,order_update,4,True,2025-10-03 15:02:13
+49,1,Order #ORD-A45F39EA Status Updated,Your order status has been updated to: Delivered,order_update,4,True,2025-10-03 15:02:13
+50,5,Order #ORD-715B4873 Status Updated,Your order status has been updated to: Confirmed,order_update,6,True,2025-10-03 15:02:15
+51,5,Order #ORD-715B4873 Status Updated,Your order status has been updated to: Processing,order_update,6,True,2025-10-03 15:02:15
+52,5,Order #ORD-715B4873 Status Updated,Your order status has been updated to: Shipped,order_update,6,True,2025-10-03 15:02:15
+53,5,Order #ORD-715B4873 Status Updated,Your order status has been updated to: Delivered,order_update,6,True,2025-10-03 15:02:15
+54,2,Order #ORD-35293E45 Status Updated,Your order status has been updated to: Confirmed,order_update,7,True,2025-10-03 15:02:17
+55,2,Order #ORD-35293E45 Status Updated,Your order status has been updated to: Processing,order_update,7,True,2025-10-03 15:02:17
+56,2,Order #ORD-35293E45 Status Updated,Your order status has been updated to: Shipped,order_update,7,True,2025-10-03 15:02:17
+57,2,Order #ORD-35293E45 Status Updated,Your order status has been updated to: Delivered,order_update,7,True,2025-10-03 15:02:17
+58,2,Order #ORD-8710FEB0 Placed Successfully,Your order for $199.02 has been placed and is awaiting confirmation.,new_order,9,True,2025-11-04 06:44:40
+59,2,New order #ORD-8710FEB0,You sold 1 item(s): Wireless Bluetooth Headphones,seller_new_order,9,True,2025-11-04 06:44:40
+60,2,Order #ORD-D4A3DF42 Placed Successfully,Your order for $320.08 has been placed and is awaiting confirmation.,new_order,10,True,2025-11-04 06:50:52
+61,2,New order #ORD-D4A3DF42,You sold 1 item(s): Test Product - Smart Bluetooth Speaker,seller_new_order,10,True,2025-11-04 06:50:52
+62,4,New order #ORD-D4A3DF42,You sold 1 item(s): Wireless Charger - Small,seller_new_order,10,True,2025-11-04 06:50:52
+63,2,Order #ORD-8710FEB0 Status Updated,Your order status has been updated to: Confirmed,order_update,9,True,2025-11-04 11:53:22
+64,2,Order #ORD-D4A3DF42 Status Updated,Your order status has been updated to: Confirmed,order_update,10,True,2025-11-04 11:53:27
+65,2,Order #ORD-D4A3DF42 Status Updated,Your order status has been updated to: Processing,order_update,10,True,2025-11-04 11:53:31
+66,2,Order #ORD-D4A3DF42 Status Updated,Your order status has been updated to: Shipped,order_update,10,True,2025-11-04 11:53:32
+67,2,Order #ORD-D4A3DF42 Status Updated,Your order status has been updated to: Delivered,order_update,10,True,2025-11-04 11:53:32
+68,2,Order #ORD-D4A3DF42 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,10,True,2025-11-04 11:53:32
+69,2,New message from Tech Store Owner,Subject: mnb,message,,True,2025-11-04 12:25:07
+70,5,Order #ORD-BC580646 Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,11,True,2025-11-04 12:48:46
+71,2,New order #ORD-BC580646,You sold 1 item(s): dzcxz,seller_new_order,11,True,2025-11-04 12:48:46
+72,2,New message from John Doe,Subject: wheb it will available,message,,True,2025-11-04 12:51:37
+73,5,Order #ORD-2C318E7F Placed Successfully,Your order for $89.99 has been placed and is awaiting confirmation.,new_order,12,True,2025-11-04 13:11:29
+74,2,New order #ORD-2C318E7F,You sold 1 item(s): Test Product - Smart Bluetooth Speaker,seller_new_order,12,True,2025-11-04 13:11:29
+75,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 16:36:25
+76,5,Order #ORD-BC580646 Status Updated,Your order status has been updated to: Confirmed,order_update,11,True,2025-11-04 16:36:37
+77,5,Order #ORD-BC580646 Status Updated,Your order status has been updated to: Processing,order_update,11,True,2025-11-04 16:36:38
+78,5,Order #ORD-BC580646 Status Updated,Your order status has been updated to: Shipped,order_update,11,True,2025-11-04 16:36:38
+79,5,Order #ORD-BC580646 Status Updated,Your order status has been updated to: Delivered,order_update,11,True,2025-11-04 16:36:39
+80,5,Order #ORD-BC580646 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,11,True,2025-11-04 16:36:39
+81,5,Order #ORD-2C318E7F Status Updated,Your order status has been updated to: Confirmed,order_update,12,True,2025-11-04 16:36:40
+82,5,Order #ORD-2C318E7F Status Updated,Your order status has been updated to: Processing,order_update,12,True,2025-11-04 16:36:40
+83,5,Order #ORD-2C318E7F Status Updated,Your order status has been updated to: Shipped,order_update,12,True,2025-11-04 16:36:40
+84,5,Order #ORD-2C318E7F Status Updated,Your order status has been updated to: Delivered,order_update,12,True,2025-11-04 16:36:41
+85,5,Order #ORD-2C318E7F Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,12,True,2025-11-04 16:36:41
+86,5,Order #ORD-9EA3BA7F Placed Successfully,Your order for $89.99 has been placed and is awaiting confirmation.,new_order,13,True,2025-11-04 16:37:49
+87,2,New order #ORD-9EA3BA7F,You sold 1 item(s): Test Product - Smart Bluetooth Speaker,seller_new_order,13,True,2025-11-04 16:37:49
+88,5,Order #ORD-9EA3BA7F Status Updated,Your order status has been updated to: Confirmed,order_update,13,True,2025-11-04 16:38:15
+89,5,Order #ORD-9EA3BA7F Status Updated,Your order status has been updated to: Processing,order_update,13,True,2025-11-04 16:38:27
+90,5,Order #ORD-9EA3BA7F Status Updated,Your order status has been updated to: Shipped,order_update,13,True,2025-11-04 16:38:35
+91,5,Order #ORD-9EA3BA7F Status Updated,Your order status has been updated to: Delivered,order_update,13,True,2025-11-04 16:38:36
+92,5,Order #ORD-9EA3BA7F Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,13,True,2025-11-04 16:38:36
+93,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 17:11:40
+94,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 17:11:46
+95,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 17:12:47
+96,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 17:13:25
+97,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-04 17:14:23
+98,2,New message from Tech Store Owner,Subject: sd,message,,True,2025-11-05 07:48:17
+99,2,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-05 07:48:25
+100,2,New message from John Doe,Subject: Message about General inquiry,message,,True,2025-11-05 12:46:28
+101,2,New message from John Doe,Subject: what,message,,True,2025-11-05 15:28:50
+102,5,Order #ORD-6480DBE3 Placed Successfully,Your order for $89.99 has been placed and is awaiting confirmation.,new_order,14,True,2025-11-05 15:31:41
+103,2,New order #ORD-6480DBE3,You sold 1 item(s): Test Product - Smart Bluetooth Speaker,seller_new_order,14,True,2025-11-05 15:31:41
+104,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-05 15:42:14
+105,5,Order #ORD-6480DBE3 Status Updated,Your order status has been updated to: Confirmed,order_update,14,True,2025-11-05 15:42:38
+106,5,Order #ORD-6480DBE3 Status Updated,Your order status has been updated to: Processing,order_update,14,True,2025-11-05 15:42:40
+107,5,Order #ORD-6480DBE3 Status Updated,Your order status has been updated to: Shipped,order_update,14,True,2025-11-05 15:42:40
+108,5,Order #ORD-6480DBE3 Status Updated,Your order status has been updated to: Delivered,order_update,14,True,2025-11-05 15:42:41
+109,5,Order #ORD-6480DBE3 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,14,True,2025-11-05 15:42:41
+110,2,New message from John Doe,Subject: Message about General inquiry,message,,True,2025-11-05 15:43:33
+111,5,New message from Tech Store Owner,Subject: Message about General inquiry,message,,True,2025-11-05 17:34:37
+112,5,Order #ORD-BBE60631 Placed Successfully,Your order for $67.77 has been placed and is awaiting confirmation.,new_order,15,True,2025-11-05 17:46:10
+113,4,New order #ORD-BBE60631,You sold 1 item(s): Wireless Bluetooth Headphones,seller_new_order,15,True,2025-11-05 17:46:10
+114,5,Order #ORD-BBE60631 Status Updated,Your order status has been updated to: Confirmed,order_update,15,True,2025-11-05 17:46:29
+115,5,Order #ORD-BBE60631 Status Updated,Your order status has been updated to: Processing,order_update,15,True,2025-11-05 17:46:30
+116,5,Order #ORD-BBE60631 Status Updated,Your order status has been updated to: Shipped,order_update,15,True,2025-11-05 17:46:30
+117,5,Order #ORD-BBE60631 Status Updated,Your order status has been updated to: Delivered,order_update,15,True,2025-11-05 17:46:31
+118,5,Order #ORD-BBE60631 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,15,True,2025-11-05 17:46:31
+119,5,Order #ORD-20D960FC Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,16,True,2025-11-05 18:23:18
+120,2,New order #ORD-20D960FC,You sold 1 item(s): dzcxz,seller_new_order,16,True,2025-11-05 18:23:18
+121,5,Order #ORD-20D960FC Status Updated,Your order status has been updated to: Confirmed,order_update,16,True,2025-11-05 18:23:42
+122,5,Order #ORD-20D960FC Status Updated,Your order status has been updated to: Processing,order_update,16,True,2025-11-05 18:23:43
+123,5,Order #ORD-20D960FC Status Updated,Your order status has been updated to: Shipped,order_update,16,True,2025-11-05 18:23:43
+124,5,Order #ORD-20D960FC Status Updated,Your order status has been updated to: Delivered,order_update,16,True,2025-11-05 18:23:43
+125,5,Order #ORD-20D960FC Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,16,True,2025-11-05 18:23:43
+126,5,Order #ORD-646FE263 Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,17,True,2025-11-05 18:36:05
+127,2,New order #ORD-646FE263,You sold 1 item(s): dzcxz,seller_new_order,17,True,2025-11-05 18:36:05
+128,5,Order #ORD-646FE263 Status Updated,Your order status has been updated to: Confirmed,order_update,17,True,2025-11-05 18:36:24
+129,5,Order #ORD-646FE263 Status Updated,Your order status has been updated to: Processing,order_update,17,True,2025-11-05 18:36:25
+130,5,Order #ORD-646FE263 Status Updated,Your order status has been updated to: Shipped,order_update,17,True,2025-11-05 18:36:25
+131,5,Order #ORD-646FE263 Status Updated,Your order status has been updated to: Delivered,order_update,17,True,2025-11-05 18:36:25
+132,5,Order #ORD-646FE263 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,17,True,2025-11-05 18:36:25
+133,5,Order #ORD-A8798926 Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,18,True,2025-11-05 18:40:05
+134,2,New order #ORD-A8798926,You sold 1 item(s): dzcxz,seller_new_order,18,True,2025-11-05 18:40:05
+135,5,Order #ORD-A8798926 Status Updated,Your order status has been updated to: Confirmed,order_update,18,True,2025-11-05 18:40:17
+136,5,Order #ORD-A8798926 Status Updated,Your order status has been updated to: Processing,order_update,18,True,2025-11-05 18:40:18
+137,5,Order #ORD-A8798926 Status Updated,Your order status has been updated to: Shipped,order_update,18,True,2025-11-05 18:40:19
+138,5,Order #ORD-A8798926 Status Updated,Your order status has been updated to: Delivered,order_update,18,True,2025-11-05 18:40:20
+139,5,Order #ORD-A8798926 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,18,True,2025-11-05 18:40:20
+140,5,Order #ORD-187A34D6 Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,19,True,2025-11-06 03:04:56
+141,2,New order #ORD-187A34D6,You sold 1 item(s): dzcxz,seller_new_order,19,True,2025-11-06 03:04:56
+142,2,New message from John Doe,Subject: Message about General inquiry,message,,True,2025-11-06 03:05:09
+143,5,Order #ORD-187A34D6 Status Updated,Your order status has been updated to: Confirmed,order_update,19,True,2025-11-06 03:07:02
+144,5,Order #ORD-187A34D6 Status Updated,Your order status has been updated to: Processing,order_update,19,True,2025-11-06 03:07:12
+145,5,Order #ORD-187A34D6 Status Updated,Your order status has been updated to: Shipped,order_update,19,True,2025-11-06 03:07:14
+146,5,Order #ORD-187A34D6 Status Updated,Your order status has been updated to: Delivered,order_update,19,True,2025-11-06 03:07:15
+147,5,Order #ORD-187A34D6 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,19,True,2025-11-06 03:07:15
+148,2,Order #ORD-BF5ED3D4 Placed Successfully,Your order for $10.00 has been placed and is awaiting confirmation.,new_order,20,True,2025-11-06 05:17:57
+149,2,New order #ORD-BF5ED3D4,You sold 1 item(s): dzcxz,seller_new_order,20,True,2025-11-06 05:17:57
+150,2,Order #ORD-BF5ED3D4 Status Updated,Your order status has been updated to: Confirmed,order_update,20,True,2025-11-06 05:18:15
+151,2,Order #ORD-BF5ED3D4 Status Updated,Your order status has been updated to: Processing,order_update,20,True,2025-11-06 05:18:15
+152,2,Order #ORD-BF5ED3D4 Status Updated,Your order status has been updated to: Shipped,order_update,20,True,2025-11-06 05:18:16
+153,2,Order #ORD-BF5ED3D4 Status Updated,Your order status has been updated to: Delivered,order_update,20,True,2025-11-06 05:18:17
+154,2,Order #ORD-BF5ED3D4 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,20,True,2025-11-06 05:18:17
+155,5,Order #ORD-2C91A313 Placed Successfully,Your order for $400.00 has been placed and is awaiting confirmation.,new_order,21,True,2025-11-06 10:41:15
+156,3,New order #ORD-2C91A313,You sold 1 item(s): Wireless Bluetooth Headphones,seller_new_order,21,False,2025-11-06 10:41:15
+157,2,New order #ORD-2C91A313,You sold 1 item(s): Cotton T-Shirt,seller_new_order,21,True,2025-11-06 10:41:15
+158,5,Order #ORD-2C91A313 Status Updated,Your order status has been updated to: Confirmed,order_update,21,True,2025-11-06 10:54:30
+159,5,Order #ORD-2C91A313 Status Updated,Your order status has been updated to: Processing,order_update,21,True,2025-11-06 10:54:39
+160,5,Order #ORD-2C91A313 Status Updated,Your order status has been updated to: Shipped,order_update,21,True,2025-11-06 10:54:47
+161,5,Order #ORD-2C91A313 Status Updated,Your order status has been updated to: Delivered,order_update,21,True,2025-11-06 10:54:51
+162,5,Order #ORD-2C91A313 Delivered,Your order was delivered successfully. We'd love to hear your feedback — please leave a review for the items you received.,review_request,21,True,2025-11-06 10:54:51
+163,2,New message from Tech Store Owner,Subject: sc cdsc,message,,True,2025-11-07 05:03:38

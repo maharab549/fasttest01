@@ -37,6 +37,14 @@ class Seller(Base):
     rating = Column(Float, default=0.0)
     total_sales = Column(Integer, default=0)
     balance = Column(Float, default=0.0)  # Seller's available funds
+    # Payout / bank details (optional)
+    payout_method = Column(String, nullable=True)  # bank_transfer, paypal, stripe, manual
+    bank_name = Column(String, nullable=True)
+    bank_account_name = Column(String, nullable=True)
+    bank_account_number = Column(String, nullable=True)
+    bank_routing_number = Column(String, nullable=True)
+    paypal_email = Column(String, nullable=True)
+    stripe_email = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -96,7 +104,23 @@ class Product(Base):
     order_items = relationship("OrderItem", back_populates="product")
     cart_items = relationship("CartItem", back_populates="product")
     reviews = relationship("Review", back_populates="product")
+    product_images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
+
+
+class ProductImage(Base):
+    __tablename__ = "product_images"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    image_url = Column(String, nullable=False)
+    alt_text = Column(String, nullable=True)
+    is_primary = Column(Boolean, default=False)  # Set one as primary/featured image
+    sort_order = Column(Integer, default=0)  # For drag-and-drop ordering
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    product = relationship("Product", back_populates="product_images")
 
 
 class ProductVariant(Base):
@@ -105,17 +129,21 @@ class ProductVariant(Base):
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     sku = Column(String, unique=True, index=True)
-    variant_name = Column(String)  # e.g., "Red - Medium"
+    variant_name = Column(String)  # e.g., "Red - Medium - 256GB"
     color = Column(String, nullable=True)
     size = Column(String, nullable=True)
     material = Column(String, nullable=True)
     style = Column(String, nullable=True)
+    # New variant attributes for electronics and other products
+    storage = Column(String, nullable=True)  # e.g., "256GB", "512GB"
+    ram = Column(String, nullable=True)  # e.g., "8GB", "16GB"
     other_attributes = Column(Text, nullable=True)  # JSON string for custom attributes
     price_adjustment = Column(Float, default=0.0)  # + or - from base price
     inventory_count = Column(Integer, default=0)
-    images = Column(Text, nullable=True)  # JSON array of variant-specific images
+    images = Column(Text, nullable=True)  # JSON array of ProductImage IDs for this variant
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
     product = relationship("Product", back_populates="variants")
@@ -132,6 +160,8 @@ class Order(Base):
     shipping_amount = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
     discount_amount = Column(Float, default=0.0)
+    discount_code = Column(String, nullable=True)  # Applied discount/coupon code
+    applied_redemption_id = Column(Integer, ForeignKey("redemptions.id"), nullable=True)  # Link to reward redemption
     
     # Shipping Information
     shipping_address = Column(JSON, nullable=False)
@@ -148,6 +178,7 @@ class Order(Base):
     # Relationships
     user = relationship("User", back_populates="orders")
     order_items = relationship("OrderItem", back_populates="order")
+    applied_redemption = relationship("Redemption", foreign_keys=[applied_redemption_id])
 
 
 class OrderItem(Base):
@@ -424,7 +455,7 @@ class Redemption(Base):
     
     # Relationships
     loyalty_account = relationship("LoyaltyAccount", back_populates="redemptions")
-    order = relationship("Order")
+    order = relationship("Order", foreign_keys=[order_id])
 
 
 class WithdrawalRequest(Base):
@@ -433,6 +464,24 @@ class WithdrawalRequest(Base):
     seller_id = Column(Integer, ForeignKey("sellers.id"))
     amount = Column(Float, nullable=False)
     status = Column(String, default="pending")  # pending, approved, rejected, paid
+    payout_reference = Column(String, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    payout_snapshot = Column(JSON, nullable=True)  # captures seller payout details at request time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     seller = relationship("Seller")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    is_used = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User")

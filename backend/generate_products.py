@@ -214,7 +214,8 @@ def main():
                         seller_id=seller.id,
                         is_active=variant["is_active"],
                         is_featured=variant["is_featured"],
-                        images=[variant.get("image_url")] if variant.get("image_url") else [],
+                        # Normalize to ID list later (create ProductImage rows below)
+                        images=[],
                         rating=round(random.uniform(3.5, 5.0), 1),
                         review_count=random.randint(0, 50),
                         weight=random.uniform(0.1, 5.0)
@@ -222,6 +223,21 @@ def main():
 
                     
                     db.add(product)
+                    db.flush()  # assign product.id
+
+                    # If we have a URL for this variant, create ProductImage and set product.images to IDs
+                    if variant.get("image_url"):
+                        img = models.ProductImage(
+                            product_id=product.id,
+                            image_url=variant["image_url"],
+                            alt_text=variant["name"],
+                            is_primary=True,
+                            sort_order=0,
+                        )
+                        db.add(img)
+                        db.flush()  # assign img.id
+                        # Set JSON list of IDs; use setattr to satisfy type checker
+                        setattr(product, "images", [img.id])
                     total_products_created += 1
                     
                     if total_products_created % 50 == 0:

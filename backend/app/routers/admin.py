@@ -672,7 +672,7 @@ def get_analytics(
     # Top products by sales
     top_products = db.query(
         crud.models.Product.title.label("product_title"),
-        func.sum(crud.models.OrderItem.quantity * crud.models.OrderItem.price).label("total_sales")
+        func.sum(crud.models.OrderItem.total_price).label("total_sales")
     ).join(
         crud.models.OrderItem, crud.models.Product.id == crud.models.OrderItem.product_id
     ).join(
@@ -680,7 +680,7 @@ def get_analytics(
     ).filter(
         crud.models.Order.created_at >= start_date,
         crud.models.Order.status == "delivered"
-    ).group_by("product_title").order_by(func.sum(crud.models.OrderItem.quantity * crud.models.OrderItem.price).desc()).limit(5).all()
+    ).group_by("product_title").order_by(func.sum(crud.models.OrderItem.total_price).desc()).limit(5).all()
 
     # User growth
     user_growth = db.query(
@@ -700,19 +700,19 @@ def get_analytics(
 
     return {
         "sales_over_time": [{
-            "date": s.date.isoformat(),
-            "total_sales": float(s.total_sales)
+            "date": s.date if isinstance(s.date, str) else s.date.isoformat(),
+            "total_sales": float(s.total_sales) if s.total_sales else 0
         } for s in sales_over_time],
         "orders_over_time": [{
-            "date": o.date.isoformat(),
+            "date": o.date if isinstance(o.date, str) else o.date.isoformat(),
             "total_orders": o.total_orders
         } for o in orders_over_time],
         "top_products": [{
             "product_title": tp.product_title,
-            "total_sales": float(tp.total_sales)
+            "total_sales": float(tp.total_sales) if tp.total_sales else 0
         } for tp in top_products],
         "user_growth": [{
-            "date": ug.date.isoformat(),
+            "date": ug.date if isinstance(ug.date, str) else ug.date.isoformat(),
             "new_users": ug.new_users
         } for ug in user_growth],
         "order_status_distribution": {
@@ -733,7 +733,60 @@ def get_pending_products(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    return crud.get_pending_products(db=db, skip=skip, limit=limit)
+    from ..models import ProductImage
+    
+    products = crud.get_pending_products(db=db, skip=skip, limit=limit)
+    
+    # Convert image IDs to URLs for each product
+    result = []
+    for product in products:
+        product_dict = {
+            "id": product.id,
+            "seller_id": product.seller_id,
+            "category_id": product.category_id,
+            "title": product.title,
+            "slug": product.slug,
+            "description": product.description,
+            "short_description": product.short_description,
+            "price": product.price,
+            "compare_price": product.compare_price,
+            "sku": product.sku,
+            "inventory_count": product.inventory_count,
+            "weight": product.weight,
+            "dimensions": product.dimensions,
+            "images": [],
+            "is_active": product.is_active,
+            "is_featured": product.is_featured,
+            "has_variants": product.has_variants,
+            "rating": product.rating,
+            "review_count": product.review_count,
+            "view_count": product.view_count,
+            "created_at": product.created_at,
+            "updated_at": product.updated_at,
+            "approval_status": product.approval_status,
+            "rejection_reason": product.rejection_reason,
+            "approved_at": product.approved_at,
+            "approved_by": product.approved_by,
+            "variants": product.variants or [],
+            "seller": product.seller,
+        }
+        
+        # Get actual image URLs
+        if product.images is not None:
+            image_ids = product.images if isinstance(product.images, list) else []
+            try:
+                if len(image_ids) > 0:
+                    product_images = db.query(ProductImage).filter(
+                        ProductImage.id.in_(image_ids)
+                    ).all()
+                    product_dict["images"] = [img.image_url for img in product_images] if product_images else []
+            except Exception:
+                product_dict["images"] = []
+        
+        result.append(product_dict)
+    
+    return result
+
 
 @router.put("/products/{product_id}/approve", response_model=schemas.Product)
 def approve_product(
@@ -767,3 +820,134 @@ def reject_product(
         raise HTTPException(status_code=404, detail="Product not found")
     
     return product
+
+
+# Withdrawal management (admin)
+@router.get("/withdrawals", response_model=Dict[str, Any])
+def admin_list_withdrawals(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    status: Optional[str] = Query(None),
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    skip = (page - 1) * per_page
+    query = db.query(crud.models.WithdrawalRequest)
+    if status:
+        query = query.filter(crud.models.WithdrawalRequest.status == status)
+    total = query.count()
+    items = query.order_by(crud.models.WithdrawalRequest.created_at.desc()).offset(skip).limit(per_page).all()
+    data = [
+        {
+            "id": w.id,
+            "seller_id": w.seller_id,
+            "seller": {
+                "id": w.seller.id,
+                "full_name": w.seller.user.full_name if w.seller.user else None,
+                "store_name": w.seller.store_name,
+                "email": w.seller.user.email if w.seller.user else None
+            } if w.seller else None,
+            "amount": float(w.amount),
+            "status": w.status,
+            "payout_method": w.payout_snapshot if w.payout_snapshot else None,
+            "payout_reference": getattr(w, "payout_reference", None),
+            "paid_at": w.paid_at.isoformat() if getattr(w, "paid_at", None) else None,
+            "payout_snapshot": None,  # Don't send raw object, use payout_method instead
+            "created_at": w.created_at.isoformat() if w.created_at else None
+        }
+        for w in items
+    ]
+    return {"items": data, "total": total, "page": page, "per_page": per_page}
+
+
+@router.put("/withdrawals/{withdrawal_id}/approve")
+def admin_approve_withdrawal(
+    withdrawal_id: int,
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    wd = crud.approve_withdrawal(db=db, withdrawal_id=withdrawal_id, admin_user_id=current_user.id)
+    if not wd:
+        raise HTTPException(status_code=404, detail="Withdrawal not found or cannot be approved")
+    return {"message": "Withdrawal approved", "withdrawal_id": wd.id, "status": wd.status}
+
+
+@router.put("/withdrawals/{withdrawal_id}/process")
+def admin_process_withdrawal(
+    withdrawal_id: int,
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    wd = crud.process_withdrawal_payout(db=db, withdrawal_id=withdrawal_id, admin_user_id=current_user.id)
+    if not wd:
+        raise HTTPException(status_code=400, detail="Unable to process payout (maybe already processed or invalid)")
+    return {"message": "Payout processed", "withdrawal_id": wd.id, "status": wd.status, "payout_reference": wd.payout_reference, "paid_at": wd.paid_at}
+
+# Seller Approval Endpoints
+@router.get("/sellers/pending", response_model=Dict[str, Any])
+def get_pending_sellers(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get pending sellers (not yet verified)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    skip = (page - 1) * per_page
+    query = db.query(crud.models.Seller).filter(crud.models.Seller.is_verified == False)
+    total = query.count()
+    sellers = query.order_by(crud.models.Seller.created_at.desc()).offset(skip).limit(per_page).all()
+    
+    data = [
+        {
+            "id": s.id,
+            "store_name": s.store_name,
+            "store_description": s.store_description,
+            "store_slug": s.store_slug,
+            "user_id": s.user_id,
+            "user_email": s.user.email if s.user else None,
+            "user_name": s.user.full_name if s.user else None,
+            "is_verified": s.is_verified,
+            "rating": s.rating,
+            "total_sales": s.total_sales,
+            "balance": float(s.balance),
+            "created_at": s.created_at.isoformat() if s.created_at else None
+        }
+        for s in sellers
+    ]
+    return {"items": data, "total": total, "page": page, "per_page": per_page}
+
+
+@router.put("/sellers/{seller_id}/approve")
+def approve_seller(
+    seller_id: int,
+    current_user: schemas.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Approve a seller (set is_verified=True)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    seller = db.query(crud.models.Seller).filter(crud.models.Seller.id == seller_id).first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller not found")
+    
+    seller.is_verified = True
+    db.commit()
+    db.refresh(seller)
+    
+    return {
+        "message": "Seller approved successfully",
+        "seller_id": seller.id,
+        "store_name": seller.store_name,
+        "is_verified": seller.is_verified
+    }

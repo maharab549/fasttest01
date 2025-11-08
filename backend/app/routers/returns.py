@@ -94,8 +94,10 @@ def get_seller_returns(
         .join(models.Product, models.ReturnItem.product_id == models.Product.id)\
         .filter(models.Product.seller_id == seller.id)\
         .options(joinedload(models.Return.return_items))\
+        .order_by(models.Return.created_at.desc())\
         .distinct()\
         .offset(skip).limit(limit).all()
+    
     
     logger.info(f"[SELLER RETURNS] Found {len(returns)} returns for seller")
     

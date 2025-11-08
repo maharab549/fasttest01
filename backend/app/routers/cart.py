@@ -8,7 +8,7 @@ from ..database import get_db
 router = APIRouter(prefix="/cart", tags=["cart"])
 
 
-# Support both trailing and non-trailing slash to avoid browser CORS issues on redirects
+# Support both trailing and non-trailing clash to avoid browser CORS issues on redirects
 @router.get("/", response_model=List[schemas.CartItem])
 @router.get("", response_model=List[schemas.CartItem])
 def get_cart(
