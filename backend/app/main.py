@@ -86,16 +86,11 @@ else:
 
 # Trusted hosts
 app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=[
-        "localhost",
-        "127.0.0.1",
-        # TestClient uses host 'testserver' during pytest runs
-        "testserver",
-        "*.vercel.app",
-        "*.onrender.com",
-        "megamartcom.netlify.app"
-    ]
+    CORSMiddleware,
+    allow_origins=["*"],  # allow everything temporarily
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ----------------------------------------------------------------
@@ -233,9 +228,18 @@ async def general_exception_handler(request: Request, exc: Exception):
     print(f"UNHANDLED EXCEPTION on {request.method} {request.url.path}:")
     print(traceback.format_exc())
     print("=" * 80)
+    # Ensure CORS headers are present even for internal errors so the frontend
+    # receives the JSON body instead of the browser blocking it.
+    origin = request.headers.get("origin")
+    allow_origin = origin if origin else "*"
+    headers = {
+        "Access-Control-Allow-Origin": allow_origin,
+        "Access-Control-Allow-Credentials": "true",
+    }
     return JSONResponse(
         status_code=500, 
-        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__}
+        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__},
+        headers=headers
     )
 
 @app.exception_handler(500)
@@ -245,7 +249,13 @@ async def internal_error_handler(request: Request, exc):
     print("500 INTERNAL SERVER ERROR:")
     print(traceback.format_exc())
     print("=" * 80)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
+    origin = request.headers.get("origin")
+    allow_origin = origin if origin else "*"
+    headers = {
+        "Access-Control-Allow-Origin": allow_origin,
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)}, headers=headers)
 
 # ----------------------------------------------------------------
 # Entry point
