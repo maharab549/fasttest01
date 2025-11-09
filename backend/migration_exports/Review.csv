@@ -1,3 +1,0 @@
-id,user_id,product_id,order_id,rating,title,comment,photos,is_verified_purchase,is_approved,created_at
-1,5,1583,12,5,,Testing 47,,True,True,2025-11-04 16:39:05
-2,2,1584,,5,,dasdsadsfsdfds,,False,True,2025-11-06 05:22:30
