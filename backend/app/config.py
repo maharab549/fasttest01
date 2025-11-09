@@ -40,8 +40,17 @@ class Settings(BaseSettings):
 
     def __init__(self, **data):
         super().__init__(**data)
+        # Support multiple env var formats for convenience:
+        # - JSON array string: '["https://a.com", "https://b.com"]'
+        # - Comma-separated string: 'https://a.com,https://b.com'
         if isinstance(self.cors_origins, str):
-            self.cors_origins = json.loads(self.cors_origins)
+            raw = self.cors_origins
+            try:
+                self.cors_origins = json.loads(raw)
+            except Exception:
+                # Fall back to comma-separated parsing
+                parts = [p.strip() for p in raw.split(',') if p.strip()]
+                self.cors_origins = parts
     
     # App
     debug: bool = True

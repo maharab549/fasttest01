@@ -21,11 +21,22 @@ from .security_middleware import (
 )
 import os
 from datetime import datetime
+from sqlalchemy import text
 
 # ----------------------------------------------------------------
 # Database initialization
 # ----------------------------------------------------------------
-models.Base.metadata.create_all(bind=engine)
+try:
+    # Creating tables at import time can cause the app to crash on startup
+    # if the configured database is unreachable (e.g., Supabase network issues).
+    # Wrap in a try/except so the process can start and surface logs for
+    # debugging instead of failing silently with an import-time traceback.
+    models.Base.metadata.create_all(bind=engine)
+except Exception as e:
+    import traceback
+    print("[WARNING] Could not initialize database schema at import time:")
+    print(traceback.format_exc())
+    print("[WARNING] Continuing startup; the database may be unavailable.\n")
 
 # ----------------------------------------------------------------
 # FastAPI app creation
@@ -57,6 +68,7 @@ if not settings.debug:
 # ----------------------------------------------------------------
 # CORS configuration (important for Netlify frontend)
 # ----------------------------------------------------------------
+# Default hard-coded frontend origins (used as fallback when no env-provided list)
 frontend_origins = [
     "https://megamartcom.netlify.app",
     "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
@@ -66,28 +78,17 @@ frontend_origins = [
     "http://192.168.56.1:5173"
 ]
 
-# During development, allow all origins for convenience. In production keep a tight allowlist.
+# Determine effective allowlist: prefer settings.cors_origins (from env/.env),
+# fall back to the built-in `frontend_origins` when not set. In debug mode allow all.
 if settings.debug:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    effective_origins = ["*"]
 else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=frontend_origins,  # ⚡ Must match your frontend URLs
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # settings.cors_origins is a List[str], possibly empty
+    effective_origins = settings.cors_origins if settings.cors_origins else frontend_origins
 
-# Trusted hosts
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow everything temporarily
+    allow_origins=effective_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -208,6 +209,29 @@ def debug_image_test(product_id: int):
         "absolute_path": str(full_path.absolute()),
         "image_url": f"/uploads/products/product_{product_id}.png"
     }
+
+
+# Debug endpoint to check database connectivity. Only enabled when debug mode is on.
+@app.get("/api/v1/debug/db_status")
+def debug_db_status():
+    """Return a quick DB connectivity check. Only available when settings.debug == True."""
+    from fastapi import HTTPException
+    import traceback
+
+    if not settings.debug:
+        raise HTTPException(status_code=403, detail="Debug endpoint disabled")
+
+    try:
+        with engine.connect() as conn:
+            # Run a minimal query to validate connectivity
+            result = conn.execute(text("SELECT 1"))
+            scalar = result.scalar()
+        return {"db": "ok", "result": scalar}
+    except Exception as e:
+        tb = traceback.format_exc()
+        # Include CORS headers so frontend can read this error during debugging
+        headers = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"}
+        return JSONResponse(status_code=500, content={"db": "error", "error": str(e), "trace": tb}, headers=headers)
 
 # ----------------------------------------------------------------
 # Exception handlers
