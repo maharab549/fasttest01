@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc
+from sqlalchemy import and_, or_, desc, asc, true
 from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from . import models, schemas, auth
@@ -93,7 +93,8 @@ def create_seller(db: Session, seller: schemas.SellerCreate, user_id: int) -> mo
 
 # Category CRUD
 def get_categories(db: Session, skip: int = 0, limit: int = 100) -> List[models.Category]:
-    return db.query(models.Category).filter(models.Category.is_active == True).offset(skip).limit(limit).all()
+    # Use .is_(True) for boolean column comparisons to avoid SQLAlchemy warnings
+    return db.query(models.Category).filter(models.Category.is_active.is_(True)).offset(skip).limit(limit).all()
 
 
 def get_category(db: Session, category_id: int) -> Optional[models.Category]:
@@ -121,7 +122,8 @@ def get_products(
     sort_by: str = "created_at",
     sort_order: str = "desc"
 ) -> List[models.Product]:
-    query = db.query(models.Product).filter(models.Product.is_active == True)
+    # Use .is_(True) for boolean column comparisons
+    query = db.query(models.Product).filter(models.Product.is_active.is_(True))
     
     # Only show approved products to customers (not admin/seller views)
     query = query.filter(models.Product.approval_status == "approved")
@@ -182,8 +184,8 @@ def get_products_by_seller(db: Session, seller_id: int, skip: int = 0, limit: in
 def get_featured_products(db: Session, limit: int = 8) -> List[models.Product]:
     """Get featured products that are active and approved"""
     return db.query(models.Product).filter(
-        models.Product.is_featured == True,
-        models.Product.is_active == True,
+        models.Product.is_featured.is_(True),
+        models.Product.is_active.is_(True),
         models.Product.approval_status == "approved"
     ).limit(limit).all()
 
@@ -430,14 +432,14 @@ def create_review(db: Session, review: schemas.ReviewCreate, user_id: int) -> mo
 
 def get_reviews_by_product(db: Session, product_id: int, skip: int = 0, limit: int = 100) -> List[models.Review]:
     return db.query(models.Review).filter(
-        and_(models.Review.product_id == product_id, models.Review.is_approved == True)
+        and_(models.Review.product_id == product_id, models.Review.is_approved.is_(True))
     ).offset(skip).limit(limit).all()
 
 
 def update_product_rating(db: Session, product_id: int):
     """Update product rating based on reviews"""
     reviews = db.query(models.Review).filter(
-        and_(models.Review.product_id == product_id, models.Review.is_approved == True)
+        and_(models.Review.product_id == product_id, models.Review.is_approved.is_(True))
     ).all()
     
     if reviews:
@@ -458,7 +460,7 @@ def count_products(
     max_price: Optional[float] = None
 ) -> int:
     """Count products with filters"""
-    query = db.query(models.Product).filter(models.Product.is_active == True)
+    query = db.query(models.Product).filter(models.Product.is_active.is_(True))
     
     if search:
         if semantic_search:
