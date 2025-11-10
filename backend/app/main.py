@@ -1,13 +1,17 @@
-from fastapi import FastAPI, HTTPException, Request
+import os
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
 from .config import settings
 from .database import engine
-from . import models
-from . import db_migrations
+from . import models, db_migrations
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
@@ -15,10 +19,6 @@ from .routers import (
 )
 from .ws_redis import bridge
 from .security_middleware import SecurityHeadersMiddleware, RequestLoggingMiddleware, RateLimitMiddleware
-import os
-from datetime import datetime
-from sqlalchemy import text
-import traceback
 
 # ----------------------------------------------------------------
 # Database initialization
@@ -26,35 +26,37 @@ import traceback
 try:
     models.Base.metadata.create_all(bind=engine)
 except Exception as e:
+    import traceback
     print("[WARNING] Could not initialize database schema at import time:")
     print(traceback.format_exc())
-    print("[WARNING] Continuing startup; the database may be unavailable.\n")
+    print("[WARNING] Continuing startup; database may be unavailable.\n")
 
 # ----------------------------------------------------------------
-# FastAPI app creation
+# FastAPI app
 # ----------------------------------------------------------------
 app = FastAPI(
     title="MegaMart API",
-    description="A comprehensive MegaMart API with authentication, product, cart, and order systems",
+    description="MegaMart API with auth, product, cart, order, and more",
     version="1.1.1",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
 
 # ----------------------------------------------------------------
-# Security & middleware
+# Security middleware
 # ----------------------------------------------------------------
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
-# app.add_middleware(RateLimitMiddleware, requests_per_minute=300, requests_per_hour=5000)
+# app.add_middleware(RateLimitMiddleware, requests_per_minute=300, requests_per_hour=5000)  # optional
 
 if not settings.debug:
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # ----------------------------------------------------------------
-# CORS configuration
+# CORS middleware (must be before routers)
 # ----------------------------------------------------------------
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://megamartcom.netlify.app")
+
 if settings.debug:
     allow_origins = ["*"]
 else:
@@ -69,7 +71,7 @@ app.add_middleware(
 )
 
 # ----------------------------------------------------------------
-# Static files setup
+# Static files
 # ----------------------------------------------------------------
 uploads_dir = "uploads"
 os.makedirs(uploads_dir, exist_ok=True)
@@ -91,31 +93,23 @@ for router in routers:
 app.include_router(ws_messages.router)
 
 # ----------------------------------------------------------------
-# Redis Bridge
+# Global preflight OPTIONS handler (fix for CORS POST/PUT/DELETE)
 # ----------------------------------------------------------------
-@app.on_event("startup")
-async def startup_events():
-    try:
-        print("Running DB migrations...")
-        db_migrations.run_all(engine)
-        print("[OK] DB migrations completed")
-    except Exception as e:
-        print(f"[WARNING] DB migrations error (non-fatal): {e}")
-
-@app.on_event("shutdown")
-async def shutdown_events():
-    try:
-        await bridge.close()
-    except Exception:
-        pass
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str, request: Request, response: Response):
+    response.headers["Access-Control-Allow-Origin"] = FRONTEND_URL
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return Response(status_code=204)
 
 # ----------------------------------------------------------------
-# Core endpoints
+# Debug & health endpoints
 # ----------------------------------------------------------------
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to MegaMart API (Render Version)",
+        "message": "Welcome to MegaMart API",
         "version": "1.1.1",
         "docs": "/api/docs",
         "redoc": "/api/redoc"
@@ -138,39 +132,49 @@ async def test_frontend(request: Request):
     }
 
 # ----------------------------------------------------------------
-# Exception handlers with CORS headers
+# Startup & shutdown events
 # ----------------------------------------------------------------
-def cors_headers(request: Request):
-    origin = request.headers.get("origin", FRONTEND_URL)
-    return {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true",
-    }
+@app.on_event("startup")
+async def startup_events():
+    try:
+        print("Running DB migrations...")
+        db_migrations.run_all(engine)
+        print("[OK] DB migrations completed")
+    except Exception as e:
+        print(f"[WARNING] DB migrations error (non-fatal): {e}")
+    # Initialize Redis bridge (optional)
+    # try:
+    #     await bridge.init()
+    # except Exception as e:
+    #     print(f"[WARNING] Redis bridge error (non-fatal): {e}")
 
+@app.on_event("shutdown")
+async def shutdown_events():
+    try:
+        await bridge.close()
+    except Exception:
+        pass
+
+# ----------------------------------------------------------------
+# Exception handlers
+# ----------------------------------------------------------------
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"detail": "Endpoint not found"},
-        headers=cors_headers(request)
-    )
+    return JSONResponse(status_code=404, content={"detail": "Endpoint not found"})
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-        headers=cors_headers(request)
-    )
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    print(f"UNHANDLED EXCEPTION on {request.method} {request.url.path}:")
-    print(traceback.format_exc())
+    import traceback
+    origin = request.headers.get("origin") or FRONTEND_URL
+    headers = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true"}
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__},
-        headers=cors_headers(request)
+        content={"detail": "Internal server error", "error": str(exc)},
+        headers=headers
     )
 
 # ----------------------------------------------------------------
@@ -179,9 +183,4 @@ async def general_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=settings.debug
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=settings.debug)
