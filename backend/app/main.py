@@ -84,6 +84,8 @@ if settings.debug:
 else:
     # settings.cors_origins is a List[str], possibly empty
     effective_origins = settings.cors_origins if settings.cors_origins else frontend_origins
+# Log the effective CORS origins for easier debugging in deployment logs
+print(f"[CORS] Effective allow-origins: {effective_origins}")
 
 app.add_middleware(
     CORSMiddleware,
