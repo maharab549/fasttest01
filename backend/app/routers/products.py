@@ -235,7 +235,7 @@ def get_products(
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
     with_meta: bool = Query(False),
-    response: Response | None = None,
+    response: Response = None,
     db: Session = Depends(get_db)
 ):
     """Get products with filtering, sorting, and pagination"""
