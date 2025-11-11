@@ -19,6 +19,7 @@ import math
 import os
 import shutil
 import json
+import traceback
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -234,7 +235,7 @@ def get_products(
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
     with_meta: bool = Query(False),
-    response: Response = None,
+    response: Response | None = None,
     db: Session = Depends(get_db)
 ):
     """Get products with filtering, sorting, and pagination"""
@@ -285,6 +286,12 @@ def get_products(
         # Historically some clients expect a plain list; return list for compatibility
         return products_data
     except Exception as e:
+        # Print full traceback to logs when debug is enabled to aid diagnosis in production
+        try:
+            if getattr(settings, 'debug', False):
+                print(traceback.format_exc())
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Error fetching products: {str(e)}")
 
 
@@ -302,6 +309,11 @@ def get_featured_products(limit: int = Query(8, ge=1, le=20), db: Session = Depe
         # Convert products to dict format using the helper
         return [format_product_for_response(product, db) for product in products]
     except Exception as e:
+        try:
+            if getattr(settings, 'debug', False):
+                print(traceback.format_exc())
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Error fetching featured products: {str(e)}")
 
 
@@ -385,6 +397,11 @@ def search_products(
             "pages": pages
         }
     except Exception as e:
+        try:
+            if getattr(settings, 'debug', False):
+                print(traceback.format_exc())
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Error searching products: {str(e)}")
 
 
