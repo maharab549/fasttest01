@@ -17,6 +17,7 @@ from typing import Sequence, Type
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import inspect, text
 
 import sys
 
@@ -64,14 +65,34 @@ MODEL_ORDER: Sequence[Type] = [
 
 
 def export_model(sess, model: Type) -> Path:
-    rows = sess.query(model).all()
-    cols = [c.name for c in model.__table__.columns]
+    # Use the actual columns present in the current database table to avoid
+    # errors when the SQLAlchemy model and the DB schema are out of sync.
+    inspector = inspect(engine)
+    try:
+        cols = [c["name"] for c in inspector.get_columns(model.__tablename__)]
+    except Exception:
+        # Fallback to model table columns if inspector fails for any reason
+        cols = [c.name for c in model.__table__.columns]
+
+    # Query the database directly for only the existing columns. Using the
+    # ORM query(model) can cause SQL to reference model columns that don't
+    # exist in the DB (if the model was updated but the DB wasn't migrated).
+    conn = engine.connect()
+    cols_quoted = ", ".join([f'"{c}"' for c in cols])
+    sel = text(f"SELECT {cols_quoted} FROM {model.__tablename__}")
+    res = conn.execute(sel)
+    rows = res.fetchall()
     out_path = EXPORT_DIR / f"{model.__name__}.csv"
     with out_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(cols)
         for row in rows:
-            writer.writerow([getattr(row, c) for c in cols])
+            # Convert row to a mapping to make access predictable across SQLAlchemy
+            # versions; fall back to empty string for NULLs/missing keys.
+            # Row may be a Row or RowMapping; use _mapping to get a mapping-like object
+            row_map = dict(row._mapping)
+            writer.writerow([row_map.get(c, "") for c in cols])
+    conn.close()
     print(f"Exported {model.__name__}: {len(rows)} rows -> {out_path.relative_to(BASE_DIR)}")
     return out_path
 

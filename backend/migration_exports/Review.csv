@@ -1,0 +1,4 @@
+id,user_id,product_id,rating,title,comment,is_verified_purchase,is_approved,created_at,order_id,photos
+1,5,1583,5,,Testing 47,1,1,2025-11-04 16:39:05,12,
+2,2,1584,5,,dasdsadsfsdfds,0,1,2025-11-06 05:22:30,,null
+3,5,,5,,Top best product test,0,1,2025-11-08 06:36:14,,null

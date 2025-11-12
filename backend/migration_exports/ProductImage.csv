@@ -1,0 +1,141 @@
+id,product_id,image_url,alt_text,is_primary,sort_order,created_at
+1,34,/uploads/products/bluetooth-speaker-max-5.png,,,,2025-11-07 18:07:53
+2,35,/uploads/products/bluetooth-speaker-premium-6.png,,,,2025-11-07 18:07:53
+3,36,/uploads/products/bluetooth-speaker-pro-4.png,,,,2025-11-07 18:07:53
+4,37,/uploads/products/coffee-maker-elite-4.png,,,,2025-11-07 18:07:53
+5,38,/uploads/products/coffee-maker-max-5.png,,,,2025-11-07 18:07:53
+6,39,/uploads/products/coffee-maker-max-6.png,,,,2025-11-07 18:07:53
+7,40,/uploads/products/coffee-maker-pro-7.png,,,,2025-11-07 18:07:53
+8,41,/uploads/products/desk-chair-plus-6.png,,,,2025-11-07 18:07:53
+9,42,/uploads/products/desk-chair-pro-4.png,,,,2025-11-07 18:07:53
+10,43,/uploads/products/desk-chair-pro-5.png,,,,2025-11-07 18:07:53
+11,44,/uploads/products/desk-chair-pro-7.png,,,,2025-11-07 18:07:53
+12,45,/uploads/products/laptop-computer-max-5.png,,,,2025-11-07 18:07:53
+13,46,/uploads/products/laptop-computer-premium-7.png,,,,2025-11-07 18:07:53
+14,47,/uploads/products/laptop-computer-pro-4.png,,,,2025-11-07 18:07:53
+15,48,/uploads/products/laptop-computer-pro-6.png,,,,2025-11-07 18:07:53
+16,49,/uploads/products/running-shoes-elite-4.png,,,,2025-11-07 18:07:53
+17,50,/uploads/products/running-shoes-elite-6.png,,,,2025-11-07 18:07:53
+18,51,/uploads/products/running-shoes-max-7.png,,,,2025-11-07 18:07:53
+19,52,/uploads/products/running-shoes-pro-5.png,,,,2025-11-07 18:07:53
+20,53,/uploads/products/smart-watch-elite-4.png,,,,2025-11-07 18:07:53
+21,54,/uploads/products/smart-watch-plus-6.png,,,,2025-11-07 18:07:53
+22,55,/uploads/products/smart-watch-plus-7.png,,,,2025-11-07 18:07:53
+23,56,/uploads/products/smart-watch-pro-5.png,,,,2025-11-07 18:07:53
+24,57,/uploads/products/smartphone-elite-5.png,,,,2025-11-07 18:07:53
+25,58,/uploads/products/smartphone-elite-6.png,,,,2025-11-07 18:07:53
+26,59,/uploads/products/smartphone-elite-7.png,,,,2025-11-07 18:07:53
+27,60,/uploads/products/smartphone-max-4.png,,,,2025-11-07 18:07:53
+28,61,/uploads/products/wireless-headphones-elite-7.png,,,,2025-11-07 18:07:53
+29,62,/uploads/products/wireless-headphones-plus-6.png,,,,2025-11-07 18:07:53
+30,63,/uploads/products/wireless-headphones-pro-5.png,,,,2025-11-07 18:07:53
+31,64,/uploads/products/image_01.png,Image 01,1,1,2025-11-07 13:38:16
+32,65,/uploads/products/image_02.png,Image 02,1,1,2025-11-07 13:38:16
+33,66,/uploads/products/image_03.png,Image 03,1,1,2025-11-07 13:38:16
+34,67,/uploads/products/image_04.png,Image 04,1,1,2025-11-07 13:38:16
+35,68,/uploads/products/image_05.png,Image 05,1,1,2025-11-07 13:38:16
+36,69,/uploads/products/image_06.png,Image 06,1,1,2025-11-07 13:38:16
+37,70,/uploads/products/image_07.png,Image 07,1,1,2025-11-07 13:38:16
+38,71,/uploads/products/image_08.png,Image 08,1,1,2025-11-07 13:38:16
+39,72,/uploads/products/image_09.png,Image 09,1,1,2025-11-07 13:38:16
+40,73,/uploads/products/image_10.png,Image 10,1,1,2025-11-07 13:38:16
+41,74,/uploads/products/image_11.png,Image 11,1,1,2025-11-07 13:38:16
+42,75,/uploads/products/image_12.png,Image 12,1,1,2025-11-07 13:38:16
+43,76,/uploads/products/image_13.png,Image 13,1,1,2025-11-07 13:38:16
+44,77,/uploads/products/image_14.png,Image 14,1,1,2025-11-07 13:38:16
+45,78,/uploads/products/image_15.png,Image 15,1,1,2025-11-07 13:38:16
+46,79,/uploads/products/image_16.png,Image 16,1,1,2025-11-07 13:38:16
+47,80,/uploads/products/image_17.png,Image 17,1,1,2025-11-07 13:38:16
+48,81,/uploads/products/image_18.png,Image 18,1,1,2025-11-07 13:38:16
+49,82,/uploads/products/image_19.png,Image 19,1,1,2025-11-07 13:38:16
+50,83,/uploads/products/image_20.png,Image 20,1,1,2025-11-07 13:38:16
+51,84,/uploads/products/image_21.png,Image 21,1,1,2025-11-07 13:38:16
+52,85,/uploads/products/image_22.png,Image 22,1,1,2025-11-07 13:38:16
+53,86,/uploads/products/image_23.png,Image 23,1,1,2025-11-07 13:38:16
+54,87,/uploads/products/image_24.png,Image 24,1,1,2025-11-07 13:38:16
+55,88,/uploads/products/image_25.png,Image 25,1,1,2025-11-07 13:38:16
+56,89,/uploads/products/image_26.png,Image 26,1,1,2025-11-07 13:38:16
+57,90,/uploads/products/image_27.png,Image 27,1,1,2025-11-07 13:38:16
+58,91,/uploads/products/image_28.png,Image 28,1,1,2025-11-07 13:38:16
+59,92,/uploads/products/image_29.png,Image 29,1,1,2025-11-07 13:38:16
+60,93,/uploads/products/image_30.png,Image 30,1,1,2025-11-07 13:38:16
+61,94,/uploads/image_001.png,Product Image 61,1,1,2025-11-07 13:56:39
+62,95,/uploads/image_002.png,Product Image 62,1,1,2025-11-07 13:56:39
+63,96,/uploads/image_003.png,Product Image 63,1,1,2025-11-07 13:56:39
+64,97,/uploads/image_004.png,Product Image 64,1,1,2025-11-07 13:56:39
+65,98,/uploads/image_005.png,Product Image 65,1,1,2025-11-07 13:56:39
+66,99,/uploads/image_006.png,Product Image 66,1,1,2025-11-07 13:56:39
+67,100,/uploads/image_007.png,Product Image 67,1,1,2025-11-07 13:56:39
+68,101,/uploads/image_008.png,Product Image 68,1,1,2025-11-07 13:56:39
+69,102,/uploads/image_009.png,Product Image 69,1,1,2025-11-07 13:56:39
+70,103,/uploads/image_010.png,Product Image 70,1,1,2025-11-07 13:56:39
+71,104,/uploads/image_011.png,Product Image 71,1,1,2025-11-07 13:56:39
+72,105,/uploads/image_012.png,Product Image 72,1,1,2025-11-07 13:56:39
+73,106,/uploads/image_013.png,Product Image 73,1,1,2025-11-07 13:56:39
+74,107,/uploads/image_014.png,Product Image 74,1,1,2025-11-07 13:56:39
+75,108,/uploads/image_015.png,Product Image 75,1,1,2025-11-07 13:56:39
+76,109,/uploads/image_016.png,Product Image 76,1,1,2025-11-07 13:56:39
+77,110,/uploads/image_017.png,Product Image 77,1,1,2025-11-07 13:56:39
+78,111,/uploads/image_018.png,Product Image 78,1,1,2025-11-07 13:56:39
+79,112,/uploads/image_019.png,Product Image 79,1,1,2025-11-07 13:56:39
+80,113,/uploads/image_020.png,Product Image 80,1,1,2025-11-07 13:56:39
+81,114,/uploads/image_021.png,Product Image 81,1,1,2025-11-07 13:56:39
+82,115,/uploads/image_022.png,Product Image 82,1,1,2025-11-07 13:56:39
+83,116,/uploads/image_023.png,Product Image 83,1,1,2025-11-07 13:56:39
+84,117,/uploads/image_024.png,Product Image 84,1,1,2025-11-07 13:56:39
+85,118,/uploads/image_025.png,Product Image 85,1,1,2025-11-07 13:56:39
+86,119,/uploads/image_026.png,Product Image 86,1,1,2025-11-07 13:56:39
+87,120,/uploads/image_027.png,Product Image 87,1,1,2025-11-07 13:56:39
+88,121,/uploads/image_028.png,Product Image 88,1,1,2025-11-07 13:56:39
+89,122,/uploads/image_029.png,Product Image 89,1,1,2025-11-07 13:56:39
+90,123,/uploads/image_030.png,Product Image 90,1,1,2025-11-07 13:56:39
+91,124,/uploads/image_031.png,Product Image 91,1,1,2025-11-07 13:56:39
+92,125,/uploads/image_032.png,Product Image 92,1,1,2025-11-07 13:56:39
+93,126,/uploads/image_033.png,Product Image 93,1,1,2025-11-07 13:56:39
+94,127,/uploads/image_034.png,Product Image 94,1,1,2025-11-07 13:56:39
+95,128,/uploads/image_035.png,Product Image 95,1,1,2025-11-07 13:56:39
+96,129,/uploads/image_036.png,Product Image 96,1,1,2025-11-07 13:56:39
+97,130,/uploads/image_037.png,Product Image 97,1,1,2025-11-07 13:56:39
+98,131,/uploads/image_038.png,Product Image 98,1,1,2025-11-07 13:56:39
+99,132,/uploads/image_039.png,Product Image 99,1,1,2025-11-07 13:56:39
+100,133,/uploads/image_040.png,Product Image 100,1,1,2025-11-07 13:56:39
+101,1,/uploads/image_041.png,Product Image 41,0,2,2025-11-07 19:02:59
+102,1,/uploads/image_042.png,Product Image 42,0,3,2025-11-07 19:02:59
+103,1,/uploads/image_043.png,Product Image 43,0,4,2025-11-07 19:02:59
+104,1,/uploads/image_044.png,Product Image 44,0,5,2025-11-07 19:02:59
+105,1,/uploads/image_045.png,Product Image 45,0,6,2025-11-07 19:02:59
+106,1,/uploads/image_046.png,Product Image 46,0,7,2025-11-07 19:02:59
+107,1,/uploads/image_047.png,Product Image 47,0,8,2025-11-07 19:02:59
+108,1,/uploads/image_048.png,Product Image 48,0,9,2025-11-07 19:02:59
+109,1,/uploads/image_049.png,Product Image 49,0,10,2025-11-07 19:02:59
+110,1,/uploads/image_050.png,Product Image 50,0,11,2025-11-07 19:02:59
+111,1,/uploads/image_051.png,Product Image 51,0,12,2025-11-07 19:02:59
+112,1,/uploads/image_052.png,Product Image 52,0,13,2025-11-07 19:02:59
+113,1,/uploads/image_053.png,Product Image 53,0,14,2025-11-07 19:02:59
+114,1,/uploads/image_054.png,Product Image 54,0,15,2025-11-07 19:02:59
+115,1,/uploads/image_055.png,Product Image 55,0,16,2025-11-07 19:02:59
+116,1,/uploads/image_056.png,Product Image 56,0,17,2025-11-07 19:02:59
+117,1,/uploads/image_057.png,Product Image 57,0,18,2025-11-07 19:02:59
+118,1,/uploads/image_058.png,Product Image 58,0,19,2025-11-07 19:02:59
+119,1,/uploads/image_059.png,Product Image 59,0,20,2025-11-07 19:02:59
+120,1,/uploads/image_060.png,Product Image 60,0,21,2025-11-07 19:02:59
+121,1,/uploads/image_061.png,Product Image 61,0,22,2025-11-07 19:02:59
+122,1,/uploads/image_062.png,Product Image 62,0,23,2025-11-07 19:02:59
+123,1,/uploads/image_063.png,Product Image 63,0,24,2025-11-07 19:02:59
+124,1,/uploads/image_064.png,Product Image 64,0,25,2025-11-07 19:02:59
+125,1,/uploads/image_065.png,Product Image 65,0,26,2025-11-07 19:02:59
+126,1,/uploads/image_066.png,Product Image 66,0,27,2025-11-07 19:02:59
+127,1,/uploads/image_067.png,Product Image 67,0,28,2025-11-07 19:02:59
+128,1,/uploads/image_068.png,Product Image 68,0,29,2025-11-07 19:02:59
+129,1,/uploads/image_069.png,Product Image 69,0,30,2025-11-07 19:02:59
+130,1,/uploads/image_070.png,Product Image 70,0,31,2025-11-07 19:02:59
+131,1,/uploads/image_071.png,Product Image 71,0,32,2025-11-07 19:02:59
+132,1,/uploads/image_072.png,Product Image 72,0,33,2025-11-07 19:02:59
+133,1,/uploads/image_073.png,Product Image 73,0,34,2025-11-07 19:02:59
+134,1,/uploads/image_074.png,Product Image 74,0,35,2025-11-07 19:02:59
+135,1,/uploads/image_075.png,Product Image 75,0,36,2025-11-07 19:02:59
+136,1,/uploads/image_076.png,Product Image 76,0,37,2025-11-07 19:02:59
+137,1,/uploads/image_077.png,Product Image 77,0,38,2025-11-07 19:02:59
+138,1,/uploads/image_078.png,Product Image 78,0,39,2025-11-07 19:02:59
+139,1,/uploads/image_079.png,Product Image 79,0,40,2025-11-07 19:02:59
+140,1,/uploads/image_080.png,Product Image 80,0,41,2025-11-07 19:02:59

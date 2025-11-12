@@ -1,0 +1,7 @@
+id,product_id,sku,variant_name,color,size,material,style,other_attributes,price_adjustment,inventory_count,images,is_active,created_at,storage,ram,updated_at
+1,2,SP-128-001-RED-S,Red - Small,Red,Small,,,,0.0,50,,1,2025-11-05 19:06:39,,,
+2,2,SP-128-001-RED-M,Red - Medium,Red,Medium,,,,0.0,100,,1,2025-11-05 19:06:39,,,
+3,2,SP-128-001-RED-L,Red - Large,Red,Large,,,,0.0,75,,1,2025-11-05 19:06:39,,,
+4,2,SP-128-001-BLU-S,Blue - Small,Blue,Small,,,,2.0,30,,1,2025-11-05 19:06:39,,,
+5,2,SP-128-001-BLU-M,Blue - Medium,Blue,Medium,,,,2.0,60,,1,2025-11-05 19:06:39,,,
+6,2,SP-128-001-BLK-L,Black - Large,Black,Large,,,,5.0,40,,1,2025-11-05 19:06:39,,,

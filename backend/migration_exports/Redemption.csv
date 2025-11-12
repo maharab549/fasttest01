@@ -1,0 +1,7 @@
+id,loyalty_account_id,redemption_type,points_redeemed,reward_value,reward_code,status,order_id,expires_at,used_at,created_at
+1,1,free_shipping,300,10.0,FREE-3A9C38CD,active,,2026-02-03 23:38:55.052733,,2025-11-05 15:38:55
+2,1,gift_card,5000,50.0,GIFT-18901B88,active,,2026-02-06 16:12:06.049390,,2025-11-08 08:12:06
+3,1,gift_card,5000,50.0,GIFT-3D3C7E41,active,,2026-02-06 16:26:33.319499,,2025-11-08 08:26:33
+4,1,discount_code,1000,10.0,DISC-54236D37,active,,2026-02-06 16:27:57.321458,,2025-11-08 08:27:57
+5,1,discount_code,1000,10.0,DISC-EAAE2CA9,used,24,2026-02-06 16:35:35.583772,2025-11-08 08:50:47.647681,2025-11-08 08:35:35
+6,1,cashback,10000,100.0,CASH-70DC5D05,used,25,2026-02-08 09:34:23.395007,2025-11-10 01:35:00.487546,2025-11-10 01:34:23

@@ -1,0 +1,32 @@
+id,name,slug,description,parent_id,is_active,created_at
+1,Electronics,electronics,Electronic devices and gadgets,,1,2025-09-17 08:45:32
+2,Clothing,clothing,Fashion and apparel,,1,2025-09-17 08:45:32
+3,Books,books,Books and literature,,1,2025-09-17 08:45:32
+4,Home & Garden,home-garden,Home improvement and gardening,,1,2025-09-17 08:45:32
+5,Sports,sports,Sports and outdoor equipment,,1,2025-09-17 08:45:32
+6,Toys,toys,Toys and games,,1,2025-09-17 08:45:32
+7,Computers,computers,"Desktops, laptops, and accessories",,1,2025-11-05 13:27:04
+8,Watches,watches,Wrist watches and smartwatches,,1,2025-11-05 13:27:04
+9,Photography,photography,Cameras and photography gear,,1,2025-11-05 13:27:04
+10,Audio,audio,"Speakers, headphones, and audio equipment",,1,2025-11-05 13:27:04
+11,Beauty,beauty,Beauty and personal care,,1,2025-11-05 13:27:04
+12,Health,health,Health and wellness products,,1,2025-11-05 13:27:04
+13,Groceries,groceries,Food and grocery items,,1,2025-11-05 13:27:04
+14,Automotive,automotive,Car accessories and parts,,1,2025-11-05 13:27:04
+15,Jewelry,jewelry,Jewelry and accessories,,1,2025-11-05 13:27:04
+16,Baby & Kids,baby-kids,Baby and kids products,,1,2025-11-05 13:27:04
+17,Office Supplies,office-supplies,Office and school supplies,,1,2025-11-05 13:27:04
+18,Pet Supplies,pet-supplies,Pet food and accessories,,1,2025-11-05 13:27:04
+19,Garden,garden,Gardening tools and plants,,1,2025-11-05 13:27:04
+20,Furniture,furniture,Home and office furniture,,1,2025-11-05 13:27:04
+21,Footwear,footwear,"Shoes, sandals, and boots",,1,2025-11-05 13:27:04
+22,Bags & Luggage,bags-luggage,"Bags, backpacks, and luggage",,1,2025-11-05 13:27:04
+23,Musical Instruments,musical-instruments,Instruments and music gear,,1,2025-11-05 13:27:04
+24,Crafts,crafts,Arts and crafts supplies,,1,2025-11-05 13:27:04
+25,Travel,travel,Travel accessories and gear,,1,2025-11-05 13:27:04
+26,Appliances,appliances,Home and kitchen appliances,,1,2025-11-05 13:27:04
+27,Stationery,stationery,Stationery and writing supplies,,1,2025-11-05 13:27:04
+28,Outdoor,outdoor,Outdoor and camping gear,,1,2025-11-05 13:27:04
+29,Mobile Accessories,mobile-accessories,"Phone cases, chargers, and more",,1,2025-11-05 13:27:04
+30,Gaming,gaming,Video games and gaming accessories,,1,2025-11-05 13:27:04
+31,Home Decor,home-decor,Decorative items for home,,1,2025-11-05 13:27:04

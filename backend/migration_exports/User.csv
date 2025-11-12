@@ -1,0 +1,11 @@
+id,email,username,full_name,hashed_password,is_active,is_seller,is_admin,created_at,updated_at
+1,admin@marketplace.com,admin,Admin User,$2b$12$IJeevX5vCw1lI.zQ8TqULuE9T1ksH85clIW/Rfa641GQgwoZEkSvO,1,0,1,2025-09-17 08:45:33,2025-09-17 08:45:33
+2,seller1@marketplace.com,techstore,Tech Store Owner,$2b$12$rceGJqvYA7ehHtSv5U7.9OUHHyklkubxKQJr4NrFivugp.4M3FsmC,1,1,0,2025-09-17 08:45:33,
+3,seller2@marketplace.com,fashionista,Fashion Store Owner,$2b$12$h.SHqdmGhQfERbwVCrXdaelx20qYpFmc6iKeDC/7IaFVkEf9Cj7LC,1,1,0,2025-09-17 08:45:33,
+4,seller3@marketplace.com,bookworm,Book Store Owner,$2b$12$dY/ByvQboT6CadXBKuoKFeelJYWUfV8Gvc0pGb4acLuMIYSh8yGO.,1,1,0,2025-09-17 08:45:33,
+5,customer1@marketplace.com,customer1,John Doe,$2b$12$9ARudEuxjMFlUPsXJnMwauzKycoShVyYHsV0yDQlJnblQUPUhEGu2,1,0,0,2025-09-17 08:45:34,2025-09-30 14:41:46
+6,customer2@marketplace.com,customer2,Jane Smith,$2b$12$UmyqTB1.iswdw8K1n5Km6.gk1ANv9T25ElBeUCX2d.DKu4egq1ORS,1,0,0,2025-09-17 08:45:34,
+7,newuser@example.com,newuser,New User,$2b$12$2IQzrznMJgD2NMKW/X0bHeuRDCFbNhCJoGYF5kzDbXKsO6JSfyOUC,1,0,0,2025-11-06 06:31:03,
+8,tc_seller@example.com,tc_seller,TC Seller,$2b$12$cRpTs9gALac610CUD8SdZO.3QtlWKG2kWq2AwVySPGthiyaPlxuoS,1,1,0,2025-11-07 04:20:19,
+9,test_seller@example.com,test_seller,Test Seller,$2b$12$.EaGaRW/8Vp9VyBlOsvUXe8XL66dJHWv5rF2I2bLlVN.v/EwzHa0W,1,1,0,2025-11-07 04:41:06,
+10,seller_withdraw@example.com,seller_withdraw,Test Seller,$2b$12$Xfg4/4C.xDajGgBkTYWOVeyLg/LGn/ROhMn7eAvGoPQsCZI5fmY9u,1,1,0,2025-11-07 06:21:52,2025-11-07 06:21:53

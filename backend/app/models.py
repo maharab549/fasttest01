@@ -26,6 +26,9 @@ class User(Base):
     cart_items = relationship("CartItem", back_populates="user")
     reviews = relationship("Review", back_populates="user")
     seller_profile = relationship("Seller", back_populates="user", uselist=False)
+    # Returns and notifications (reverse relations)
+    returns = relationship("Return", back_populates="user")
+    notifications = relationship("Notification", back_populates="user")
 
 
 class Seller(Base):
@@ -182,6 +185,8 @@ class Order(Base):
     user = relationship("User", back_populates="orders")
     order_items = relationship("OrderItem", back_populates="order")
     applied_redemption = relationship("Redemption", foreign_keys=[applied_redemption_id])
+    # Reverse relation for returns
+    returns = relationship("Return", back_populates="order")
 
 
 class OrderItem(Base):
@@ -238,7 +243,8 @@ class Return(Base):
     # Relationships
     order = relationship("Order", back_populates="returns")
     user = relationship("User", back_populates="returns")
-    return_items = relationship("ReturnItem", back_populates="return")
+    # use `return_obj` on ReturnItem side to avoid using the Python keyword `return`
+    return_items = relationship("ReturnItem", back_populates="return_obj")
 
 
 class ReturnItem(Base):
