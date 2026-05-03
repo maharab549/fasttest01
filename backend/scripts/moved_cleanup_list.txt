@@ -1,0 +1,86 @@
+﻿__pycache__
+app\__pycache__
+app\routers\__pycache__
+tests\__pycache__
+---- 2025-11-11_222053 ----
+scripts\test_api_endpoints.py
+tests\test_auth.py
+tests\test_products.py
+test_add_product_with_image.py
+test_api.py
+test_api_quick.py
+test_db_state.py
+test_endpoint.py
+test_image_upload.py
+test_image_urls.py
+test_payment_system.py
+test_payout_endpoints.py
+test_routes.py
+test_route_matching.py
+test_seller_returns_api.py
+test_variants_api.py
+test_withdraw.py
+test_withdraw_fixed.py
+test_with_testclient.py
+test_with_token.py
+tmp_create_product_image.py
+tmp_http_upload_real.py
+tmp_http_upload_test.py
+tmp_http_upload_via_login.py
+tmp_http_upload_with_register.py
+tmp_testclient_upload.py
+---- 2025-11-11_222153 ----
+
+---- 2025-11-11_222813 ----
+.pytest_cache\README.md
+Don't need to see\RETURN_TESTING_GUIDE.md
+Markdown\API_DOCUMENTATION.md
+Markdown\API_ENDPOINTS_VARIANTS.md
+Markdown\BACKEND_IMPLEMENTATION_SUMMARY.md
+Markdown\FINAL_SUMMARY_ALL_FIXES.md
+Markdown\FIX_SUMMARY.md
+Markdown\IMPLEMENTATION_CHECKLIST.md
+Markdown\IMPLEMENTATION_COMPLETE.md
+Markdown\OPTIMIZATION_REPORT.md
+Markdown\PAYMENT_METHOD_FIXED_AND_IMPROVED.md
+Markdown\PAYMENT_METHOD_VISUAL_GUIDE.md
+Markdown\PAYMENT_SYSTEM_IMPLEMENTATION.md
+Markdown\PAYMENT_SYSTEM_USER_GUIDE.md
+Markdown\PRODUCT_TESTING_GUIDE.md
+Markdown\QUICK_REFERENCE.md
+Markdown\README_CSV_IMPORT.md
+Markdown\README_DB_MIGRATION.md
+Markdown\VARIANT_FEATURE_STATUS.md
+Markdown\VERIFICATION_CHECKLIST.md
+Markdown\VISUAL_COMPARISON_OLD_VS_NEW.md
+Markdown\WITHDRAWAL_FLOW_FIXED.md
+Markdown\WITHDRAWAL_QUICK_REFERENCE.md
+Don't need to see\check_bookworm_data.py
+Don't need to see\check_product.py
+Don't need to see\check_product_owner.py
+Don't need to see\check_product_seller.py
+Don't need to see\check_returns.py
+Don't need to see\check_return_images.py
+Don't need to see\check_techstore.py
+check_api.py
+check_api_fixed.py
+check_db.py
+check_db_state.py
+check_duplicates.py
+check_images.py
+check_images_status.py
+check_schema.py
+check_seller_routes.py
+check_tables.py
+check_users.py
+---- 2025-11-11_224006 (migration scripts) ----
+add_product_variant_columns_migration.py
+add_stripe_email.py
+add_variant_columns.py
+create_images_table.py
+create_product_variants_table.py
+create_table.py
+generate_products.py
+generate_test_token.py
+verify_db.py
+verify_upload_db.py

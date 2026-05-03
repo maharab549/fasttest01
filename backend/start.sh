@@ -14,7 +14,7 @@ fi
 
 echo "🚀 Starting backend server..."
 echo "📍 API will be available at: http://localhost:8000"
-echo "📚 API Docs will be available at: http://localhost:8000/docs"
+echo "📚 API Docs will be available at: http://localhost:8000/api/docs"
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""

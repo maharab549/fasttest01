@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from .. import crud, schemas, auth
 from ..database import get_db
+from ..media_paths import make_absolute_media_url
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -104,16 +105,18 @@ def get_category_products(
         if product.images is not None:
             image_ids = product.images if isinstance(product.images, list) else []
             try:
-                if len(image_ids) > 0:
+                if image_ids and all(isinstance(x, int) for x in image_ids):
                     product_images = db.query(ProductImage).filter(
                         ProductImage.id.in_(image_ids)
                     ).all()
-                    product_dict["images"] = [img.image_url for img in product_images] if product_images else []
+                    product_dict["images"] = [make_absolute_media_url(img.image_url) for img in product_images] if product_images else []
+                elif image_ids:
+                    product_dict["images"] = [make_absolute_media_url(str(img)) for img in image_ids]
             except Exception:
                 product_dict["images"] = []
+        product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
         
         result.append(product_dict)
     
     return result
-
 

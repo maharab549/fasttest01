@@ -11,61 +11,47 @@ import json
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
+def validate_order_items(order: schemas.OrderCreate, db: Session):
+    """Validate all order items before creating the order"""
+    if not order.items or len(order.items) == 0:
+        raise HTTPException(status_code=400, detail="Cart cannot be empty. Please add items before ordering.")
+    
+    errors = []
+    for item in order.items:
+        if item.quantity <= 0:
+            errors.append(f"Item quantity must be at least 1")
+            continue
+        
+        product = crud.get_product(db=db, product_id=item.product_id)
+        if not product:
+            errors.append(f"Product ID {item.product_id} not found")
+            continue
+        
+        if not product.is_active:
+            errors.append(f"Product '{product.title}' is no longer available")
+            continue
+        
+        if product.inventory_count <= 0:
+            errors.append(f"Product '{product.title}' is out of stock")
+            continue
+        
+        if item.quantity > product.inventory_count:
+            errors.append(f"Only {product.inventory_count} units available for '{product.title}'")
+    
+    if errors:
+        raise HTTPException(status_code=400, detail="Order validation failed: " + "; ".join(errors))
+
+
 @router.post("/", response_model=schemas.Order)
 def create_order(
     order: schemas.OrderCreate,
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user)
 ):
-    """Create a new order with optional discount code"""
-    from datetime import datetime
+    """Create a new order"""
+    # Validate all order items first
+    validate_order_items(order, db)
     
-    # Validate discount code if provided
-    discount_amount = 0.0
-    applied_redemption_id = None
-    
-    if order.discount_code:
-        # Get user's loyalty account
-        loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
-        if not loyalty_account:
-            raise HTTPException(
-                status_code=404,
-                detail="Loyalty account not found"
-            )
-        
-        # Find redemption with this code
-        redemption = db.query(models.Redemption).filter(
-            models.Redemption.reward_code == order.discount_code.strip(),
-            models.Redemption.loyalty_account_id == int(loyalty_account.id)  # type: ignore
-        ).first()
-        
-        if not redemption:
-            raise HTTPException(
-                status_code=404,
-                detail="Discount code not found"
-            )
-        
-        # Validate redemption status
-        redemption_status = getattr(redemption, "status", None)
-        if redemption_status != "active":
-            raise HTTPException(
-                status_code=400,
-                detail=f"This code is no longer {redemption_status}"
-            )
-        
-        # Check if expired
-        expires_at = getattr(redemption, "expires_at", None)
-        if expires_at is not None and expires_at < datetime.utcnow():
-            raise HTTPException(
-                status_code=400,
-                detail="This code has expired"
-            )
-        
-        # Get discount amount
-        discount_amount = float(getattr(redemption, "reward_value", 0))
-        applied_redemption_id = int(getattr(redemption, "id", 0))  # type: ignore
-    
-    # Validate all products exist and are available
     # Collect seller notifications context: seller_user_id -> list of item summaries
     seller_items_map = {}
     for item in order.items:
@@ -102,33 +88,8 @@ def create_order(
             # best-effort, continue
             pass
     
-    # Create the order (this calculates totals)
+    # Create the order
     db_order = crud.create_order(db=db, order=order, user_id=current_user.id)
-    
-    # Apply discount if provided
-    if discount_amount > 0 and applied_redemption_id:
-        # Update order with discount
-        setattr(db_order, "discount_amount", discount_amount)
-        discount_code_str = order.discount_code.strip() if order.discount_code else ""
-        setattr(db_order, "discount_code", discount_code_str)
-        setattr(db_order, "applied_redemption_id", applied_redemption_id)
-        
-        # Recalculate total after discount
-        current_total = cast(float, getattr(db_order, "total_amount", 0))
-        new_total = max(0.0, current_total - discount_amount)
-        setattr(db_order, "total_amount", new_total)
-        
-        # Mark redemption as used
-        redemption = db.query(models.Redemption).filter(
-            models.Redemption.id == applied_redemption_id
-        ).first()
-        if redemption:
-            setattr(redemption, "status", "used")
-            setattr(redemption, "order_id", int(getattr(db_order, "id", 0)))  # type: ignore
-            setattr(redemption, "used_at", datetime.utcnow())
-        
-        db.commit()
-        db.refresh(db_order)
     
     # Create notification for order placement
     create_notification(
@@ -152,20 +113,26 @@ def create_order(
     # Clear cart after successful order
     crud.clear_cart(db=db, user_id=current_user.id)
     
-    # Award loyalty points for the purchase (1 point per $100 spent on final amount)
-    loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
-    if loyalty_account:
-        final_amount = cast(float, getattr(db_order, "total_amount", 0))
-        points_earned = int(final_amount / 100)  # 1 point per $100
-        crud.award_points(
-            db=db,
-            loyalty_account_id=cast(int, loyalty_account.id),  # type: ignore
-            points=points_earned,
-            source="purchase",
-            source_id=str(getattr(db_order, "id", 0)),
-            description=f"Earned {points_earned} points from order #{getattr(db_order, 'order_number', 'Unknown')}",
-            metadata={"order_number": getattr(db_order, "order_number", ""), "order_amount": final_amount}
-        )
+    # Award loyalty points for the purchase (1 point per dollar)
+    # Best-effort only: order placement must succeed even if loyalty logic fails.
+    try:
+        loyalty_account = crud.get_loyalty_account_by_user(db, current_user.id)
+        if loyalty_account:
+            total_amount_val = cast(float, db_order.total_amount)
+            points_earned = int(total_amount_val)  # 1 point per dollar
+            if points_earned > 0:
+                crud.award_points(
+                    db=db,
+                    loyalty_account_id=cast(int, loyalty_account.id),
+                    points=points_earned,
+                    source="purchase",
+                    source_id=str(db_order.id),
+                    description=f"Earned {points_earned} points from order #{db_order.order_number}",
+                    metadata={"order_number": db_order.order_number, "order_amount": db_order.total_amount}
+                )
+    except Exception as e:
+        # Keep checkout successful even if loyalty bookkeeping fails.
+        print(f"[orders.py] loyalty award warning for order {db_order.id}: {e}")
     
     # Notify each seller with items included in the order
     try:
@@ -452,81 +419,4 @@ def edit_order(
         related_order_id=int(getattr(order, "id", 0))
     )
     return order
-
-
-@router.post("/validate-discount")
-def validate_discount_code(
-    code: str = Query(..., description="Discount code to validate"),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user)
-):
-    """
-    Validate a discount code and return discount amount
-    
-    The code must belong to the current user and be:
-    - Status: active
-    - Not expired
-    - Not already used
-    
-    Returns discount amount and redemption details
-    """
-    from datetime import datetime
-    
-    try:
-        # Get user's loyalty account
-        loyalty_account = crud.get_loyalty_account_by_user(db, int(current_user.id))  # type: ignore
-        if not loyalty_account:
-            raise HTTPException(
-                status_code=404,
-                detail="Loyalty account not found"
-            )
-        
-        # Get redemption with this code
-        redemption = db.query(models.Redemption).filter(
-            models.Redemption.reward_code == code.strip(),
-            models.Redemption.loyalty_account_id == int(loyalty_account.id)  # type: ignore
-        ).first()
-        
-        if not redemption:
-            raise HTTPException(
-                status_code=404,
-                detail="Discount code not found or does not belong to you"
-            )
-        
-        # Check if code is active
-        redemption_status = getattr(redemption, "status", None)
-        if redemption_status != "active":
-            raise HTTPException(
-                status_code=400,
-                detail=f"This code is no longer {redemption_status}"
-            )
-        
-        # Check if code is expired
-        expires_at = getattr(redemption, "expires_at", None)
-        if expires_at is not None and expires_at < datetime.utcnow():
-            raise HTTPException(
-                status_code=400,
-                detail="This code has expired"
-            )
-        
-        # Return discount details
-        reward_value = getattr(redemption, "reward_value", 0)
-        redemption_id = getattr(redemption, "id", 0)
-        
-        return {
-            "valid": True,
-            "code": code.strip(),
-            "discount_amount": float(reward_value),
-            "redemption_type": getattr(redemption, "redemption_type", "discount_code"),
-            "redemption_id": int(redemption_id),
-            "message": f"${reward_value} discount applied!"
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Error validating code: {str(e)}"
-        )
 

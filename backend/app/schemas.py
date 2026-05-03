@@ -9,19 +9,24 @@ class UserBase(BaseModel):
     username: str
     full_name: str
 
+
 class UserCreate(UserBase):
     password: str
     is_seller: bool = False
+
 
 class UserLogin(BaseModel):
     username: str
     password: str
 
+
 class ChatbotQuery(BaseModel):
     message: str
 
+
 class ChatbotResponse(BaseModel):
     response: str
+
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
@@ -30,36 +35,17 @@ class UserUpdate(BaseModel):
     is_seller: Optional[bool] = None
     is_admin: Optional[bool] = None
 
+
 class User(UserBase):
     id: int
     is_active: bool
     is_seller: bool
     is_admin: bool
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
 
-# Password Reset Schemas
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
-    confirm_password: str
-    def __init__(self, **data):
-        super().__init__(**data)
-        if self.new_password != self.confirm_password:
-            raise ValueError("Passwords do not match")
-
-class PasswordResetToken(BaseModel):
-    id: int
-    user_id: int
-    token: str
-    is_used: bool
-    expires_at: datetime
-    used_at: Optional[datetime] = None
-    created_at: datetime
-    class Config: from_attributes = True
 
 # Seller Schemas
 class SellerBase(BaseModel):
@@ -67,8 +53,10 @@ class SellerBase(BaseModel):
     store_description: Optional[str] = None
     store_slug: str
 
+
 class SellerCreate(SellerBase):
     pass
+
 
 class Seller(SellerBase):
     id: int
@@ -83,7 +71,10 @@ class Seller(SellerBase):
     bank_routing_number: Optional[str] = None
     paypal_email: Optional[str] = None
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Category Schemas
 class CategoryBase(BaseModel):
@@ -92,14 +83,19 @@ class CategoryBase(BaseModel):
     description: Optional[str] = None
     parent_id: Optional[int] = None
 
+
 class CategoryCreate(CategoryBase):
     pass
+
 
 class Category(CategoryBase):
     id: int
     is_active: bool
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Product Schemas
 class ProductBase(BaseModel):
@@ -109,16 +105,21 @@ class ProductBase(BaseModel):
     short_description: Optional[str] = None
     price: float
     compare_price: Optional[float] = None
-    sku: Optional[str] = None # SKU can be optional
+    sku: str
     inventory_count: int = 0
     weight: Optional[float] = None
     dimensions: Optional[Dict[str, Any]] = None
     images: Optional[List[str]] = None
-    category_id: Optional[int] = None # Can be optional
+    category_id: int
+
 
 class ProductCreate(ProductBase):
+    # images should be optional when creating a product from the frontend
+    # (frontend might upload images separately and provide zero or more image urls)
     images: Optional[List[str]] = None
 
+
+# Relaxed input for product creation where slug can be omitted and generated server-side
 class ProductCreateInput(BaseModel):
     title: str
     description: Optional[str] = None
@@ -131,7 +132,8 @@ class ProductCreateInput(BaseModel):
     dimensions: Optional[Dict[str, Any]] = None
     images: Optional[List[str]] = None
     category_id: int
-    slug: Optional[str] = None
+    slug: Optional[str] = None  # optional; server may generate
+
 
 class ProductUpdate(BaseModel):
     title: Optional[str] = None
@@ -146,21 +148,27 @@ class ProductUpdate(BaseModel):
     category_id: Optional[int] = None
     is_active: Optional[bool] = None
 
-# Product Image Schemas
+
+# Product Image Schemas (NEW)
 class ProductImageBase(BaseModel):
     image_url: str
     alt_text: Optional[str] = None
     is_primary: bool = False
     sort_order: int = 0
 
+
 class ProductImageCreate(ProductImageBase):
     pass
+
 
 class ProductImage(ProductImageBase):
     id: int
     product_id: int
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Product Variant Schemas
 class ProductVariantBase(BaseModel):
@@ -168,17 +176,19 @@ class ProductVariantBase(BaseModel):
     size: Optional[str] = None
     material: Optional[str] = None
     style: Optional[str] = None
-    storage: Optional[str] = None
-    ram: Optional[str] = None
-    other_attributes: Optional[str] = None
+    storage: Optional[str] = None  # e.g., "256GB", "512GB" for electronics
+    ram: Optional[str] = None  # e.g., "8GB", "16GB" for electronics
+    other_attributes: Optional[str] = None  # JSON string for custom attributes
     price_adjustment: float = 0.0
     inventory_count: int = 0
     images: Optional[List[str]] = None
+
 
 class ProductVariantCreate(ProductVariantBase):
     product_id: int
     sku: Optional[str] = None
     variant_name: Optional[str] = None
+
 
 class ProductVariantUpdate(BaseModel):
     color: Optional[str] = None
@@ -193,6 +203,7 @@ class ProductVariantUpdate(BaseModel):
     images: Optional[List[str]] = None
     is_active: Optional[bool] = None
 
+
 class ProductVariant(ProductVariantBase):
     id: int
     product_id: int
@@ -201,16 +212,21 @@ class ProductVariant(ProductVariantBase):
     is_active: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class Product(ProductBase):
     id: int
     seller_id: int
     seller: Optional[Seller] = None
+    # Convenience field that always points to the main image URL for the frontend
+    primary_image_url: Optional[str] = None
     is_active: bool
     is_featured: bool
-    has_variants: bool = False
-    variants: List['ProductVariant'] = []
+    has_variants: bool = False  # NEW
+    variants: List['ProductVariant'] = []  # NEW - using string forward ref
     approval_status: Optional[str] = "pending"
     rejection_reason: Optional[str] = None
     approved_at: Optional[datetime] = None
@@ -220,10 +236,14 @@ class Product(ProductBase):
     view_count: Optional[int] = 0
     created_at: datetime
     updated_at: Optional[datetime] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class ProductRejection(BaseModel):
     reason: str
+
 
 # Cart Schemas
 class CartItemBase(BaseModel):
@@ -231,8 +251,10 @@ class CartItemBase(BaseModel):
     quantity: int
     variant_id: Optional[int] = None
 
+
 class CartItemCreate(CartItemBase):
     pass
+
 
 class CartItem(CartItemBase):
     id: int
@@ -240,7 +262,10 @@ class CartItem(CartItemBase):
     created_at: datetime
     product: Optional[Product] = None
     variant: Optional['ProductVariant'] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Order Schemas
 class OrderItemBase(BaseModel):
@@ -248,8 +273,10 @@ class OrderItemBase(BaseModel):
     quantity: int
     unit_price: float
 
+
 class OrderItemCreate(OrderItemBase):
     pass
+
 
 class OrderItem(OrderItemBase):
     id: int
@@ -258,16 +285,20 @@ class OrderItem(OrderItemBase):
     product_name: Optional[str] = None
     product_image: Optional[str] = None
     product: Optional[Product] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class OrderBase(BaseModel):
     shipping_address: Dict[str, Any]
     billing_address: Optional[Dict[str, Any]] = None
     payment_method: Optional[str] = None
 
+
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]
-    discount_code: Optional[str] = None
+
 
 class Order(OrderBase):
     id: int
@@ -284,10 +315,14 @@ class Order(OrderBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     order_items: List[OrderItem] = []
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
 
 # Review Schemas
 class ReviewBase(BaseModel):
@@ -295,10 +330,12 @@ class ReviewBase(BaseModel):
     rating: int
     title: Optional[str] = None
     comment: Optional[str] = None
-    photos: Optional[List[str]] = None
+    photos: Optional[List[str]] = None  # List of photo URLs
+
 
 class ReviewCreate(ReviewBase):
-    order_id: Optional[int] = None
+    order_id: Optional[int] = None  # Will be set automatically by the API
+
 
 class Review(ReviewBase):
     id: int
@@ -309,15 +346,19 @@ class Review(ReviewBase):
     created_at: datetime
     user: Optional[User] = None
     photos: Optional[List[str]] = None
-    class Config: from_attributes = True
+    class Config:
+        from_attributes = True
+
 
 # Token Schemas
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
     username: Optional[str] = None
+
 
 # Search and Filter Schemas
 class ProductSearch(BaseModel):
@@ -325,10 +366,11 @@ class ProductSearch(BaseModel):
     category_id: Optional[int] = None
     min_price: Optional[float] = None
     max_price: Optional[float] = None
-    sort_by: Optional[str] = "created_at"
-    sort_order: Optional[str] = "desc"
+    sort_by: Optional[str] = "created_at"  # created_at, price, rating, title
+    sort_order: Optional[str] = "desc"  # asc, desc
     page: int = 1
     per_page: int = 20
+
 
 # Response Schemas
 class PaginatedResponse(BaseModel):
@@ -338,25 +380,32 @@ class PaginatedResponse(BaseModel):
     per_page: int
     pages: int
 
+
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+
 
 # Message Schemas
 class MessageBase(BaseModel):
     receiver_id: int
     subject: Optional[str] = None
-    content: Optional[str] = None
+    content: Optional[str] = None  # Made optional for media-only messages
     related_order_id: Optional[int] = None
     related_product_id: Optional[int] = None
-    attachment_type: Optional[str] = None
+    
+    # Media attachment fields
+    attachment_type: Optional[str] = None  # 'image', 'video', 'sticker', 'file'
     attachment_url: Optional[str] = None
     attachment_filename: Optional[str] = None
     attachment_size: Optional[int] = None
     attachment_thumbnail: Optional[str] = None
 
+
 class MessageCreate(MessageBase):
     pass
+
 
 class Message(MessageBase):
     id: int
@@ -365,7 +414,10 @@ class Message(MessageBase):
     created_at: datetime
     sender: Optional[User] = None
     receiver: Optional[User] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Notification Schemas
 class NotificationBase(BaseModel):
@@ -374,15 +426,20 @@ class NotificationBase(BaseModel):
     type: str = "info"
     related_order_id: Optional[int] = None
 
+
 class NotificationCreate(NotificationBase):
     user_id: int
+
 
 class Notification(NotificationBase):
     id: int
     user_id: int
     is_read: bool
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 # Return Schemas
 class ReturnItemBase(BaseModel):
@@ -390,25 +447,32 @@ class ReturnItemBase(BaseModel):
     product_id: int
     quantity: int
     reason: Optional[str] = None
-    condition: Optional[str] = None
+    condition: Optional[str] = None  # unopened, used, damaged
     images: Optional[List[str]] = None
+
 
 class ReturnItemCreate(ReturnItemBase):
     pass
 
+
 class ReturnItem(ReturnItemBase):
     id: int
     return_id: int
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class ReturnBase(BaseModel):
     order_id: int
-    reason: str
+    reason: str  # defective, wrong_item, not_as_described, changed_mind, other
     reason_details: Optional[str] = None
-    refund_method: str = "original"
+    refund_method: str = "original"  # original, store_credit
+
 
 class ReturnCreate(ReturnBase):
     items: List[ReturnItemCreate]
+
 
 class ReturnUpdate(BaseModel):
     status: Optional[str] = None
@@ -416,6 +480,7 @@ class ReturnUpdate(BaseModel):
     admin_notes: Optional[str] = None
     shipping_label_url: Optional[str] = None
     tracking_number: Optional[str] = None
+
 
 class Return(ReturnBase):
     id: int
@@ -433,7 +498,12 @@ class Return(ReturnBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     return_items: List[ReturnItem] = []
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
+
+
 
 # Loyalty & Rewards Schemas
 class RewardTierBase(BaseModel):
@@ -445,21 +515,28 @@ class RewardTierBase(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
 
+
 class RewardTierCreate(RewardTierBase):
     pass
+
 
 class RewardTier(RewardTierBase):
     id: int
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class LoyaltyAccountBase(BaseModel):
     points_balance: int = 0
     lifetime_points: int = 0
     referrals_count: int = 0
 
+
 class LoyaltyAccountCreate(BaseModel):
     user_id: int
+
 
 class LoyaltyAccount(LoyaltyAccountBase):
     id: int
@@ -469,19 +546,24 @@ class LoyaltyAccount(LoyaltyAccountBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     tier: Optional[RewardTier] = None
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class PointsTransactionBase(BaseModel):
-    transaction_type: str
+    transaction_type: str  # earn, redeem, expire, adjustment
     points_change: int
-    source: str
+    source: str  # purchase, review, referral, signup_bonus, admin_adjustment
     source_id: Optional[str] = None
     description: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
 
+
 class PointsTransactionCreate(PointsTransactionBase):
     loyalty_account_id: int
     points_balance_after: int
+
 
 class PointsTransaction(PointsTransactionBase):
     id: int
@@ -489,19 +571,25 @@ class PointsTransaction(PointsTransactionBase):
     points_balance_after: int
     expires_at: Optional[datetime] = None
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class RedemptionBase(BaseModel):
-    redemption_type: str
+    redemption_type: str  # discount_code, free_shipping, gift_card, cashback
     points_redeemed: int
     reward_value: float
+
 
 class RedemptionCreate(RedemptionBase):
     pass
 
+
 class RedemptionUpdate(BaseModel):
     status: Optional[str] = None
     used_at: Optional[datetime] = None
+
 
 class Redemption(RedemptionBase):
     id: int
@@ -512,7 +600,10 @@ class Redemption(RedemptionBase):
     expires_at: Optional[datetime] = None
     used_at: Optional[datetime] = None
     created_at: datetime
-    class Config: from_attributes = True
+    
+    class Config:
+        from_attributes = True
+
 
 class PointsEarnRequest(BaseModel):
     source: str
@@ -520,8 +611,10 @@ class PointsEarnRequest(BaseModel):
     points: int
     description: Optional[str] = None
 
+
 class ReferralSignup(BaseModel):
     referral_code: str
+
 
 class LoyaltyDashboard(BaseModel):
     account: LoyaltyAccount
@@ -529,6 +622,7 @@ class LoyaltyDashboard(BaseModel):
     active_redemptions: List[Redemption]
     next_tier: Optional[RewardTier] = None
     points_to_next_tier: Optional[int] = None
+
 
 # Withdrawal Schemas
 class WithdrawalRequestBase(BaseModel):
@@ -546,8 +640,10 @@ class WithdrawalRequest(WithdrawalRequestBase):
     payout_snapshot: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    class Config: from_attributes = True
+    class Config:
+        from_attributes = True
 
 
+# Rebuild models to resolve forward references
 Product.model_rebuild()
 CartItem.model_rebuild()

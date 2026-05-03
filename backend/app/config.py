@@ -1,5 +1,7 @@
+from typing import Any, List
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from typing import List
 import json
 
 
@@ -27,33 +29,31 @@ class Settings(BaseSettings):
     gemini_api_key: str = "default-gemini-key"
     groq_api_key: str | None = None
     
-    # Email Configuration
-    smtp_server: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_username: str = ""  # Your email
-    smtp_password: str = ""  # Your app password (not regular password)
-    sender_email: str = ""   # Sender email address
-    sender_name: str = "MeghaMart"
-    
     # CORS
     cors_origins: List[str] = []
 
     def __init__(self, **data):
         super().__init__(**data)
-        # Support multiple env var formats for convenience:
-        # - JSON array string: '["https://a.com", "https://b.com"]'
-        # - Comma-separated string: 'https://a.com,https://b.com'
         if isinstance(self.cors_origins, str):
-            raw = self.cors_origins
-            try:
-                self.cors_origins = json.loads(raw)
-            except Exception:
-                # Fall back to comma-separated parsing
-                parts = [p.strip() for p in raw.split(',') if p.strip()]
-                self.cors_origins = parts
+            self.cors_origins = json.loads(self.cors_origins)
     
     # App
     debug: bool = True
+    # Base URL used to build absolute image URLs in API responses (adjust for production)
+    api_base_url: str = "http://localhost:8000"
+
+    @field_validator("debug", "use_supabase", mode="before")
+    @classmethod
+    def parse_flexible_bool(cls, value: Any) -> Any:
+        if isinstance(value, bool) or value is None:
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on", "debug", "development", "dev"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "off", "release", "production", "prod"}:
+                return False
+        return value
     
     class Config:
         env_file = ".env"
@@ -61,4 +61,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

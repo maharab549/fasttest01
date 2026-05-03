@@ -1,0 +1,6 @@
+id,title,subtitle,description,image_url,link_url,banner_type,position,is_active,start_date,end_date,button_text,button_link,background_color,text_color,created_at,updated_at
+1,Welcome to MegaMart,Discover Amazing Products,"Shop the best deals on electronics, fashion, and more",/sliders/hero-slider-1.png,/products,slider,1,true,\N,\N,Shop Now,/products,#3b82f6,#ffffff,2025-11-05T06:24:10,\N
+2,Flash Sale,Up to 50% Off,Limited time offer on selected items,/sliders/hero-slider-2.png,/products,slider,2,true,\N,\N,Shop Sale,/products,#ef4444,#ffffff,2025-11-05T06:24:10,\N
+3,New Arrivals,Check Out Our Latest Collection,Fresh styles for the new season,/sliders/hero-slider-3.png,/products,slider,3,true,\N,\N,Explore,/products,#8b5cf6,#ffffff,2025-11-05T06:24:10,\N
+4,Free Shipping,On Orders Over $50,,/sliders/hero-slider-4.png,,promo,1,true,\N,\N,Shop Now,/products,#10b981,#ffffff,2025-11-05T06:24:10,\N
+5,Special Deals,Best Offers of the Week,Handpicked deals just for you,/banners/sale-banner-1.jpg,/products,special_offer,1,true,\N,\N,View Deals,/products,#f59e0b,#ffffff,2025-11-05T06:24:10,\N

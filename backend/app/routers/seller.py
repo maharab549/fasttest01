@@ -4,6 +4,7 @@ from sqlalchemy import func
 from typing import List
 from .. import crud, schemas, auth
 from ..database import get_db
+from ..media_paths import make_absolute_media_url
 from typing import cast
 from datetime import datetime
 
@@ -105,13 +106,16 @@ def get_seller_products(
         if product.images is not None:
             image_ids = product.images if isinstance(product.images, list) else []
             try:
-                if len(image_ids) > 0:
+                if image_ids and all(isinstance(x, int) for x in image_ids):
                     product_images = db.query(ProductImage).filter(
                         ProductImage.id.in_(image_ids)
                     ).all()
-                    product_dict["images"] = [img.image_url for img in product_images] if product_images else []
+                    product_dict["images"] = [make_absolute_media_url(img.image_url) for img in product_images] if product_images else []
+                elif image_ids:
+                    product_dict["images"] = [make_absolute_media_url(str(img)) for img in image_ids]
             except Exception:
                 product_dict["images"] = []
+        product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
         
         result.append(product_dict)
     
@@ -481,4 +485,3 @@ def list_withdrawals(
         raise HTTPException(status_code=404, detail="Seller profile not found")
     seller_id = getattr(seller, "id", 0)
     return crud.get_withdrawal_requests_by_seller(db=db, seller_id=seller_id)
-

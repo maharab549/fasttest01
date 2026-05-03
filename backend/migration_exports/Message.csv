@@ -1,39 +1,48 @@
-id,sender_id,receiver_id,subject,content,is_read,related_order_id,related_product_id,created_at,attachment_type,attachment_url,attachment_filename,attachment_size,attachment_thumbnail
-1,5,3,,Hi! I'm interested in the Wireless Charger - Small. Can you tell me more about the warranty and shipping options?,0,,,2025-09-22 02:31:55,,,,,
-2,5,3,,Hello! I'm also wondering about the return policy for this product. Is there a 30-day return guarantee?,0,,,2025-09-23 04:37:17,,,,,
-3,5,3,,Thank you for your interest! The Wireless Charger - Small comes with a 2-year warranty and we offer free shipping on orders over $50. Standard shipping takes 3-5 business days. Would you like to place an order?,0,,,2025-09-23 04:46:21,,,,,
-4,5,1,,"Hello, I'm interested in the Smart Bluetooth Speaker. Can you tell me more about the battery life and warranty?",1,,,2025-09-23 13:09:32,,,,,
-5,2,2,dgfcvgdf,xdfxcfsdxc,1,,1,2025-09-25 18:24:37,,,,,
-6,2,2,Message about General inquiry,hiiiiiiiiiiiiii,1,,,2025-09-25 18:24:52,,,,,
-7,2,2,Message about General inquiry,hiiiiiii,1,,,2025-09-25 18:25:01,,,,,
-8,5,4,wesdf,sdfsd,1,,117,2025-09-25 18:25:52,,,,,
-9,5,4,Message about General inquiry,hiiiiiiiiiiiiiii,1,,,2025-09-25 18:26:10,,,,,
-10,5,1,Message about General inquiry,hiiiiiiiiiiiiiiiiiiii,1,,,2025-09-25 18:26:16,,,,,
-11,1,5,Message about General inquiry,ok,1,,,2025-09-25 18:26:35,,,,,
-12,1,5,Message about General inquiry,hello,1,,,2025-09-25 18:26:40,,,,,
-13,1,5,Message about General inquiry,hiii,1,,,2025-09-30 06:59:02,,,,,
-14,5,1,Message about General inquiry,jiiiiiiiiiiiiiiiiiiiiiiiiiiii,1,,,2025-09-30 07:01:36,,,,,
-15,1,5,Message about General inquiry,kire,1,,,2025-09-30 07:13:12,,,,,
-16,5,1,Message about General inquiry,ki,1,,,2025-09-30 07:13:33,,,,,
-17,1,5,Message about General inquiry,ok,1,,,2025-09-30 07:16:11,,,,,
-18,5,1,Message about General inquiry,dtgggggggggggggggggg,1,,,2025-09-30 07:16:22,,,,,
-19,1,5,Message about General inquiry,ki,1,,,2025-09-30 07:16:29,,,,,
-20,5,1,Message about General inquiry,madari,1,,,2025-10-03 14:52:37,,,,,
-21,1,5,Message about General inquiry,hala,1,,,2025-10-03 15:00:45,,,,,
-23,5,2,wheb it will available,afcdsfcds,1,,1584,2025-11-04 12:51:37,,,,,
-24,2,5,Message about General inquiry,ki hoyse?,1,,,2025-11-04 16:36:25,,,,,
-25,2,5,Message about General inquiry,ji,1,,,2025-11-04 17:11:40,,,,,
-26,2,5,Message about General inquiry,hi,1,,,2025-11-04 17:11:46,,,,,
-27,2,5,Message about General inquiry,f,1,,,2025-11-04 17:12:47,,,,,
-28,2,5,Message about General inquiry,dasd,1,,,2025-11-04 17:13:25,,,,,
-29,2,5,Message about General inquiry,hi,1,,,2025-11-04 17:14:23,,,,,
-30,2,2,sd,asdsa,1,,1584,2025-11-05 07:48:17,,,,,
-31,2,2,Message about General inquiry,hi,1,,,2025-11-05 07:48:25,,,,,
-32,5,2,Message about General inquiry,ok,1,,,2025-11-05 12:46:28,,,,,
-34,2,5,Message about General inquiry,how many?,1,,,2025-11-05 15:42:14,,,,,
-35,5,2,Message about General inquiry,10,1,,,2025-11-05 15:43:33,,,,,
-36,2,5,Message about General inquiry,ok,1,,,2025-11-05 17:34:37,,,,,
-37,5,2,Message about General inquiry,dfs d,1,,,2025-11-06 03:05:09,,,,,
-38,6,11,Inquiry about Maharab,Can I see more photos of this item?,1,,1589,2025-11-08 07:03:51,,,,,
-39,11,6,Message about General inquiry,ok,0,,,2025-11-08 07:05:04,,,,,
-40,5,4,purifyer,is it good? can i use it?,0,,322,2025-11-10 01:35:28,,,,,
+id,sender_id,receiver_id,subject,content,is_read,related_order_id,related_product_id,attachment_type,attachment_url,attachment_filename,attachment_size,attachment_thumbnail,created_at
+1,5,3,\N,Hi! I'm interested in the Wireless Charger - Small. Can you tell me more about the warranty and shipping options?,false,\N,\N,\N,\N,\N,\N,\N,2025-09-22T02:31:55
+2,5,3,\N,Hello! I'm also wondering about the return policy for this product. Is there a 30-day return guarantee?,false,\N,\N,\N,\N,\N,\N,\N,2025-09-23T04:37:17
+3,5,3,\N,Thank you for your interest! The Wireless Charger - Small comes with a 2-year warranty and we offer free shipping on orders over $50. Standard shipping takes 3-5 business days. Would you like to place an order?,false,\N,\N,\N,\N,\N,\N,\N,2025-09-23T04:46:21
+4,5,1,\N,"Hello, I'm interested in the Smart Bluetooth Speaker. Can you tell me more about the battery life and warranty?",true,\N,\N,\N,\N,\N,\N,\N,2025-09-23T13:09:32
+5,2,2,dgfcvgdf,xdfxcfsdxc,true,\N,1,\N,\N,\N,\N,\N,2025-09-25T18:24:37
+6,2,2,Message about General inquiry,hiiiiiiiiiiiiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:24:52
+7,2,2,Message about General inquiry,hiiiiiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:25:01
+8,5,4,wesdf,sdfsd,true,\N,117,\N,\N,\N,\N,\N,2025-09-25T18:25:52
+9,5,4,Message about General inquiry,hiiiiiiiiiiiiiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:26:10
+10,5,1,Message about General inquiry,hiiiiiiiiiiiiiiiiiiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:26:16
+11,1,5,Message about General inquiry,ok,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:26:35
+12,1,5,Message about General inquiry,hello,true,\N,\N,\N,\N,\N,\N,\N,2025-09-25T18:26:40
+13,1,5,Message about General inquiry,hiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T06:59:02
+14,5,1,Message about General inquiry,jiiiiiiiiiiiiiiiiiiiiiiiiiiii,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:01:36
+15,1,5,Message about General inquiry,kire,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:13:12
+16,5,1,Message about General inquiry,ki,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:13:33
+17,1,5,Message about General inquiry,ok,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:16:11
+18,5,1,Message about General inquiry,dtgggggggggggggggggg,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:16:22
+19,1,5,Message about General inquiry,ki,true,\N,\N,\N,\N,\N,\N,\N,2025-09-30T07:16:29
+20,5,1,Message about General inquiry,madari,true,\N,\N,\N,\N,\N,\N,\N,2025-10-03T14:52:37
+21,1,5,Message about General inquiry,hala,true,\N,\N,\N,\N,\N,\N,\N,2025-10-03T15:00:45
+23,5,2,wheb it will available,afcdsfcds,true,\N,1584,\N,\N,\N,\N,\N,2025-11-04T12:51:37
+24,2,5,Message about General inquiry,ki hoyse?,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T16:36:25
+25,2,5,Message about General inquiry,ji,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T17:11:40
+26,2,5,Message about General inquiry,hi,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T17:11:46
+27,2,5,Message about General inquiry,f,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T17:12:47
+28,2,5,Message about General inquiry,dasd,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T17:13:25
+29,2,5,Message about General inquiry,hi,true,\N,\N,\N,\N,\N,\N,\N,2025-11-04T17:14:23
+30,2,2,sd,asdsa,true,\N,1584,\N,\N,\N,\N,\N,2025-11-05T07:48:17
+31,2,2,Message about General inquiry,hi,true,\N,\N,\N,\N,\N,\N,\N,2025-11-05T07:48:25
+32,5,2,Message about General inquiry,ok,true,\N,\N,\N,\N,\N,\N,\N,2025-11-05T12:46:28
+34,2,5,Message about General inquiry,how many?,true,\N,\N,\N,\N,\N,\N,\N,2025-11-05T15:42:14
+35,5,2,Message about General inquiry,10,true,\N,\N,\N,\N,\N,\N,\N,2025-11-05T15:43:33
+36,2,5,Message about General inquiry,ok,true,\N,\N,\N,\N,\N,\N,\N,2025-11-05T17:34:37
+37,5,2,Message about General inquiry,dfs d,true,\N,\N,\N,\N,\N,\N,\N,2025-11-06T03:05:09
+38,6,11,Inquiry about Maharab,Can I see more photos of this item?,true,\N,1589,\N,\N,\N,\N,\N,2025-11-08T07:03:51
+39,11,6,Message about General inquiry,ok,false,\N,\N,\N,\N,\N,\N,\N,2025-11-08T07:05:04
+40,5,4,purifyer,is it good? can i use it?,false,\N,322,\N,\N,\N,\N,\N,2025-11-10T01:35:28
+41,5,3,0,0,false,\N,8,\N,\N,\N,\N,\N,2025-11-12T12:47:08
+42,5,2,is this available,hii,false,\N,121,\N,\N,\N,\N,\N,2025-11-13T02:49:09
+43,1,3,\N,"Hi, is Python Programming Guide still available?",false,\N,8,\N,\N,\N,\N,\N,2026-03-12T13:51:29
+44,1,2,\N,"Hi, is dzcxz still available?",true,\N,1584,\N,\N,\N,\N,\N,2026-04-23T08:17:22
+45,1,2,\N,"Hi, is dzcxz still available?",true,\N,1584,\N,\N,\N,\N,\N,2026-04-23T08:29:24
+46,1,2,\N,"Hi, is Smartphone 128GB still available?",true,\N,2,\N,\N,\N,\N,\N,2026-04-23T08:37:07
+47,1,2,\N,"Hi, is Smartphone 128GB still available?",true,\N,2,\N,\N,\N,\N,\N,2026-04-23T08:43:05
+48,1,2,\N,"Hi, is Smartphone 128GB still available?",true,\N,2,\N,\N,\N,\N,\N,2026-04-23T08:48:10
+49,2,1,\N,dfgfd,false,\N,\N,\N,\N,\N,\N,\N,2026-04-23T08:50:41

@@ -1,1 +1,2 @@
 id,sender_id,receiver_phone,message_content,sms_message_id,status,created_at,updated_at
+1,1,+1234567890,hi test,sms_1776903923.128327,sent,2026-04-23T08:25:23,\N

@@ -10,49 +10,11 @@ Usage (PowerShell):
 from __future__ import annotations
 import csv
 import os
-from pathlib import Path
-from typing import Sequence, Type, Dict
+from typing import Dict
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-import sys
+from migration_common import EXPORT_DIR, MODEL_ORDER, SQLITE_URL, normalize_postgres_url
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from app.models import (
-    User, Seller, Category, Product, ProductVariant, ProductImage, Order, OrderItem,
-    Return, ReturnItem, CartItem, Review, Notification, Message, Favorite,
-    SMSMessage, RewardTier, LoyaltyAccount, PointsTransaction, Redemption,
-    WithdrawalRequest
-)
-
-MODEL_ORDER: Sequence[Type] = [
-    User,
-    Seller,
-    Category,
-    Product,
-    ProductImage,
-    ProductVariant,
-    Order,
-    OrderItem,
-    Return,
-    ReturnItem,
-    CartItem,
-    Review,
-    Notification,
-    Message,
-    Favorite,
-    SMSMessage,
-    RewardTier,
-    LoyaltyAccount,
-    PointsTransaction,
-    Redemption,
-    WithdrawalRequest,
-]
-
-SQLITE_URL = "sqlite:///./marketplace.db"
-EXPORT_DIR = BASE_DIR / "migration_exports"
 POSTGRES_URL = os.environ.get("SUPABASE_DATABASE_URL")
 
 # Increase field size limit for large text fields in CSVs
@@ -89,7 +51,7 @@ def main() -> None:
     pg_engine = None
     if POSTGRES_URL:
         try:
-            pg_engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
+            pg_engine = create_engine(normalize_postgres_url(POSTGRES_URL), pool_pre_ping=True)
             with pg_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             print("[INFO] Connected to Postgres for count comparison.")

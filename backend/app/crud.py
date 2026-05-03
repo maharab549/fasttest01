@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc, true
+from sqlalchemy import and_, or_, desc, asc
 from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from . import models, schemas, auth
@@ -93,8 +93,7 @@ def create_seller(db: Session, seller: schemas.SellerCreate, user_id: int) -> mo
 
 # Category CRUD
 def get_categories(db: Session, skip: int = 0, limit: int = 100) -> List[models.Category]:
-    # Use .is_(True) for boolean column comparisons to avoid SQLAlchemy warnings
-    return db.query(models.Category).filter(models.Category.is_active.is_(True)).offset(skip).limit(limit).all()
+    return db.query(models.Category).filter(models.Category.is_active == True).offset(skip).limit(limit).all()
 
 
 def get_category(db: Session, category_id: int) -> Optional[models.Category]:
@@ -122,14 +121,10 @@ def get_products(
     sort_by: str = "created_at",
     sort_order: str = "desc"
 ) -> List[models.Product]:
-    # Use .is_(True) for boolean column comparisons
-    query = db.query(models.Product).filter(models.Product.is_active.is_(True))
+    query = db.query(models.Product).filter(models.Product.is_active == True)
     
     # Only show approved products to customers (not admin/seller views)
     query = query.filter(models.Product.approval_status == "approved")
-    
-    # Eager load seller to prevent N+1 queries
-    query = query.options(joinedload(models.Product.seller))
     
     # Apply filters
     if search:
@@ -184,8 +179,8 @@ def get_products_by_seller(db: Session, seller_id: int, skip: int = 0, limit: in
 def get_featured_products(db: Session, limit: int = 8) -> List[models.Product]:
     """Get featured products that are active and approved"""
     return db.query(models.Product).filter(
-        models.Product.is_featured.is_(True),
-        models.Product.is_active.is_(True),
+        models.Product.is_featured == True,
+        models.Product.is_active == True,
         models.Product.approval_status == "approved"
     ).limit(limit).all()
 
@@ -230,36 +225,6 @@ def increment_product_view_count(db: Session, product_id: int) -> Optional[model
             # Log a warning if the field is missing, but continue
             # In a real app, this would be a proper log, but here a print will suffice
             print(f"Warning: 'view_count' attribute not found on product {product_id}. Skipping increment.")
-    return db_product
-
-
-def get_pending_products(db: Session, skip: int = 0, limit: int = 100) -> List[models.Product]:
-    """Get all pending products waiting for admin approval"""
-    return db.query(models.Product).filter(
-        models.Product.approval_status == "pending"
-    ).order_by(models.Product.created_at.desc()).offset(skip).limit(limit).all()
-
-
-def approve_product(db: Session, product_id: int, admin_user_id: int) -> Optional[models.Product]:
-    """Approve a product by admin"""
-    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
-    if db_product:
-        db_product.approval_status = "approved"
-        db_product.approved_at = datetime.utcnow()
-        db_product.approved_by = admin_user_id
-        db.commit()
-        db.refresh(db_product)
-    return db_product
-
-
-def reject_product(db: Session, product_id: int, reason: str) -> Optional[models.Product]:
-    """Reject a product by admin with a reason"""
-    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
-    if db_product:
-        db_product.approval_status = "rejected"
-        db_product.rejection_reason = reason
-        db.commit()
-        db.refresh(db_product)
     return db_product
 
 
@@ -432,14 +397,14 @@ def create_review(db: Session, review: schemas.ReviewCreate, user_id: int) -> mo
 
 def get_reviews_by_product(db: Session, product_id: int, skip: int = 0, limit: int = 100) -> List[models.Review]:
     return db.query(models.Review).filter(
-        and_(models.Review.product_id == product_id, models.Review.is_approved.is_(True))
+        and_(models.Review.product_id == product_id, models.Review.is_approved == True)
     ).offset(skip).limit(limit).all()
 
 
 def update_product_rating(db: Session, product_id: int):
     """Update product rating based on reviews"""
     reviews = db.query(models.Review).filter(
-        and_(models.Review.product_id == product_id, models.Review.is_approved.is_(True))
+        and_(models.Review.product_id == product_id, models.Review.is_approved == True)
     ).all()
     
     if reviews:
@@ -460,7 +425,7 @@ def count_products(
     max_price: Optional[float] = None
 ) -> int:
     """Count products with filters"""
-    query = db.query(models.Product).filter(models.Product.is_active.is_(True))
+    query = db.query(models.Product).filter(models.Product.is_active == True)
     
     if search:
         if semantic_search:
@@ -811,59 +776,17 @@ def get_redemptions(
     loyalty_account_id: int,
     status: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50,
-    include_old_used_expired: bool = False
+    limit: int = 50
 ) -> List[models.Redemption]:
-    """
-    Get redemptions for a loyalty account
-    
-    By default, hides 'used' and 'expired' rewards that are older than 3 days.
-    Set include_old_used_expired=True to show all rewards regardless of age.
-    """
-    from datetime import datetime, timedelta
-    
+    """Get redemptions for a loyalty account"""
     query = db.query(models.Redemption)\
         .filter(models.Redemption.loyalty_account_id == loyalty_account_id)
     
     if status:
         query = query.filter(models.Redemption.status == status)
     
-    # Get all results first, then filter by date
-    all_redemptions = query.order_by(desc(models.Redemption.created_at)).all()
-    
-    # Filter out used/expired rewards older than 3 days
-    if not include_old_used_expired:
-        three_days_ago = datetime.utcnow() - timedelta(days=3)
-        filtered = []
-        
-        for redemption in all_redemptions:
-            status_val = getattr(redemption, "status", None)
-            
-            # Keep 'active' rewards always
-            if status_val == "active":
-                filtered.append(redemption)
-                continue
-            
-            # For 'used' and 'expired', check the timestamp
-            if status_val in ["used", "expired"]:
-                # Check which timestamp to use
-                timestamp = getattr(redemption, "used_at", None)
-                if not timestamp:
-                    timestamp = getattr(redemption, "expires_at", None)
-                if not timestamp:
-                    timestamp = getattr(redemption, "created_at", None)
-                
-                # Only keep if newer than 3 days
-                if timestamp and timestamp > three_days_ago:
-                    filtered.append(redemption)
-            else:
-                # Keep any other status
-                filtered.append(redemption)
-        
-        all_redemptions = filtered
-    
-    # Apply pagination
-    return all_redemptions[skip:skip + limit]
+    return query.order_by(desc(models.Redemption.created_at))\
+        .offset(skip).limit(limit).all()
 
 
 def use_redemption(db: Session, redemption_id: int, order_id: Optional[int] = None) -> models.Redemption:

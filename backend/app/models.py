@@ -1,10 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.sqlite import JSON
 from .database import Base
-from .config import settings
 
 
 class User(Base):
@@ -15,7 +12,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True)
     is_seller = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -26,9 +23,7 @@ class User(Base):
     cart_items = relationship("CartItem", back_populates="user")
     reviews = relationship("Review", back_populates="user")
     seller_profile = relationship("Seller", back_populates="user", uselist=False)
-    # Returns and notifications (reverse relations)
-    returns = relationship("Return", back_populates="user")
-    notifications = relationship("Notification", back_populates="user")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class Seller(Base):
@@ -66,7 +61,7 @@ class Category(Base):
     slug = Column(String, unique=True, index=True)
     description = Column(Text)
     parent_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -89,8 +84,8 @@ class Product(Base):
     sku = Column(String, unique=True, index=True)
     inventory_count = Column(Integer, default=0)
     weight = Column(Float, nullable=True)
-    dimensions = Column(JSONB if settings.use_supabase else JSON, nullable=True)  # {"length": 10, "width": 5, "height": 2}
-    images = Column(JSONB if settings.use_supabase else JSON, nullable=True)  # ["image1.jpg", "image2.jpg"]
+    dimensions = Column(JSON, nullable=True)  # {"length": 10, "width": 5, "height": 2}
+    images = Column(JSON, nullable=True)  # ["image1.jpg", "image2.jpg"]
     is_active = Column(Boolean, default=True)
     is_featured = Column(Boolean, default=False)
     has_variants = Column(Boolean, default=False)  # NEW: Product has color/size variants
@@ -112,6 +107,7 @@ class Product(Base):
     reviews = relationship("Review", back_populates="product")
     product_images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
+    variant_options = relationship("ProductVariantOption", back_populates="product", cascade="all, delete-orphan")
 
 
 class ProductImage(Base):
@@ -155,6 +151,18 @@ class ProductVariant(Base):
     product = relationship("Product", back_populates="variants")
 
 
+class ProductVariantOption(Base):
+    __tablename__ = "product_variant_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    option_type = Column(String, nullable=False)
+    option_value = Column(String, nullable=False)
+    display_order = Column(Integer, default=0)
+
+    product = relationship("Product", back_populates="variant_options")
+
+
 class Order(Base):
     __tablename__ = "orders"
     
@@ -166,12 +174,10 @@ class Order(Base):
     shipping_amount = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
     discount_amount = Column(Float, default=0.0)
-    discount_code = Column(String, nullable=True)  # Applied discount/coupon code
-    applied_redemption_id = Column(Integer, ForeignKey("redemptions.id"), nullable=True)  # Link to reward redemption
     
     # Shipping Information
-    shipping_address = Column(JSONB if settings.use_supabase else JSON, nullable=False)
-    billing_address = Column(JSONB if settings.use_supabase else JSON, nullable=True)
+    shipping_address = Column(JSON, nullable=False)
+    billing_address = Column(JSON, nullable=True)
     
     # Payment Information
     payment_method = Column(String, nullable=True)
@@ -184,9 +190,6 @@ class Order(Base):
     # Relationships
     user = relationship("User", back_populates="orders")
     order_items = relationship("OrderItem", back_populates="order")
-    applied_redemption = relationship("Redemption", foreign_keys=[applied_redemption_id])
-    # Reverse relation for returns
-    returns = relationship("Return", back_populates="order")
 
 
 class OrderItem(Base):
@@ -241,10 +244,9 @@ class Return(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    order = relationship("Order", back_populates="returns")
-    user = relationship("User", back_populates="returns")
-    # use `return_obj` on ReturnItem side to avoid using the Python keyword `return`
-    return_items = relationship("ReturnItem", back_populates="return_obj")
+    user = relationship("User")
+    order = relationship("Order")
+    return_items = relationship("ReturnItem", back_populates="return_request")
 
 
 class ReturnItem(Base):
@@ -253,41 +255,25 @@ class ReturnItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     return_id = Column(Integer, ForeignKey("returns.id"), nullable=False)
     order_item_id = Column(Integer, ForeignKey("order_items.id"), nullable=False)
-    quantity = Column(Integer, nullable=False)
-    
-    # Relationships
-    return_obj = relationship("Return", back_populates="return_items")
-    order_item = relationship("OrderItem")
-
-
-class Review(Base):
-    __tablename__ = "reviews"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    rating = Column(Integer, nullable=False)  # 1 to 5
-    title = Column(String, nullable=True)
-    content = Column(Text, nullable=True)
-    is_approved = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    quantity = Column(Integer, nullable=False)
+    reason = Column(String, nullable=True)  # Specific reason for this item
+    condition = Column(String, nullable=True)  # unopened, used, damaged
+    images = Column(JSON, nullable=True)  # Photos of the item/issue
     
     # Relationships
-    user = relationship("User", back_populates="reviews")
-    product = relationship("Product", back_populates="reviews")
-    
-    __table_args__ = (
-        UniqueConstraint('user_id', 'product_id', name='_user_product_uc'),
-    )
+    return_request = relationship("Return", back_populates="return_items")
+    order_item = relationship("OrderItem")
+    product = relationship("Product")
 
 
 class CartItem(Base):
     __tablename__ = "cart_items"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True)  # NEW
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -295,67 +281,77 @@ class CartItem(Base):
     # Relationships
     user = relationship("User", back_populates="cart_items")
     product = relationship("Product", back_populates="cart_items")
-    variant = relationship("ProductVariant")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])  # NEW
+
+
+class Review(Base):
+    __tablename__ = "reviews"
     
-    __table_args__ = (
-        UniqueConstraint('user_id', 'product_id', 'variant_id', name='_user_product_variant_uc'),
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)  # Link to order for delivery verification
+    rating = Column(Integer, nullable=False)  # 1-5 stars
+    title = Column(String, nullable=True)
+    comment = Column(Text, nullable=True)
+    photos = Column(JSON, nullable=True)  # List of photo URLs
+    is_verified_purchase = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="reviews")
+    product = relationship("Product", back_populates="reviews")
+    order = relationship("Order")
+
 
 
 class Notification(Base):
     __tablename__ = "notifications"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    type = Column(String, nullable=False)  # e.g., 'order_status', 'new_message', 'promotion'
+    user_id = Column(Integer, ForeignKey("users.id"))
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
+    type = Column(String, default="info")  # info, order_update, new_order, etc.
+    related_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     is_read = Column(Boolean, default=False)
-    related_id = Column(Integer, nullable=True)  # e.g., order_id, message_id
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="notifications")
+    user = relationship("User")
+    related_order = relationship("Order")
+
 
 
 class Message(Base):
     __tablename__ = "messages"
     
     id = Column(Integer, primary_key=True, index=True)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    receiver_id = Column(Integer, ForeignKey("users.id"))
     subject = Column(String, nullable=True)
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)  # Made nullable for media-only messages
     is_read = Column(Boolean, default=False)
     related_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     related_product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Attachments
-    attachment_type = Column(String, nullable=True) # e.g., 'image', 'document'
+    # Media attachment fields
+    attachment_type = Column(String, nullable=True)  # 'image', 'video', 'sticker', 'file'
     attachment_url = Column(String, nullable=True)
     attachment_filename = Column(String, nullable=True)
-    attachment_size = Column(Integer, nullable=True)
-    attachment_thumbnail = Column(String, nullable=True)
+    attachment_size = Column(Integer, nullable=True)  # in bytes
+    attachment_thumbnail = Column(String, nullable=True)  # thumbnail URL for videos
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     sender = relationship("User", foreign_keys=[sender_id])
     receiver = relationship("User", foreign_keys=[receiver_id])
-    related_order = relationship("Order", foreign_keys=[related_order_id])
-    related_product = relationship("Product", foreign_keys=[related_product_id])
+    related_order = relationship("Order")
+    related_product = relationship("Product")
 
 
-class PasswordResetToken(Base):
-    __tablename__ = "password_reset_tokens"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    token = Column(String, unique=True, nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationships
-    user = relationship("User")
 
 
 class Favorite(Base):
@@ -370,65 +366,44 @@ class Favorite(Base):
     user = relationship("User")
     product = relationship("Product")
     
-    __table_args__ = (
-        UniqueConstraint('user_id', 'product_id', name='_user_favorite_uc'),
-    )
+    # Unique constraint to prevent duplicate favorites
+    __table_args__ = (UniqueConstraint('user_id', 'product_id', name='unique_user_product_favorite'),)
 
 
-class Banner(Base):
-    __tablename__ = "banners"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    subtitle = Column(String, nullable=True)
-    description = Column(Text, nullable=True)
-    image_url = Column(String, nullable=False)
-    link_url = Column(String, nullable=True)
-    banner_type = Column(String, nullable=True) # e.g., 'slider', 'promo'
-    position = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    start_date = Column(DateTime(timezone=True), nullable=True)
-    end_date = Column(DateTime(timezone=True), nullable=True)
-    
-    # Optional styling fields
-    button_text = Column(String, nullable=True)
-    button_link = Column(String, nullable=True)
-    background_color = Column(String, nullable=True)
-    text_color = Column(String, nullable=True)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
 class SMSMessage(Base):
     __tablename__ = "sms_messages"
     
     id = Column(Integer, primary_key=True, index=True)
-    recipient_phone = Column(String, nullable=False)
-    message_body = Column(Text, nullable=False)
-    status = Column(String, default="pending") # pending, sent, failed, delivered
-    provider_response = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class WithdrawalRequest(Base):
-    __tablename__ = "withdrawal_requests"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
-    amount = Column(Float, nullable=False)
-    status = Column(String, default="pending") # pending, approved, rejected, paid
-    payout_method = Column(String, nullable=False)
-    transaction_id = Column(String, nullable=True)
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    receiver_phone = Column(String, nullable=False)
+    message_content = Column(Text, nullable=False)
+    sms_message_id = Column(String, nullable=True)  # External SMS provider message ID
+    status = Column(String, default="pending")  # pending, sent, delivered, failed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    seller = relationship("Seller", back_populates="withdrawal_requests")
+    sender = relationship("User")
 
-Seller.withdrawal_requests = relationship("WithdrawalRequest", back_populates="seller")
-User.returns = relationship("Return", back_populates="user")
-Order.returns = relationship("Return", back_populates="order")
+
+
+
+class RewardTier(Base):
+    __tablename__ = "reward_tiers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)  # Bronze, Silver, Gold, Platinum
+    min_points = Column(Integer, nullable=False, default=0)
+    max_points = Column(Integer, nullable=True)  # Null for highest tier
+    benefits = Column(JSON, nullable=True)  # {"discount_percentage": 5, "free_shipping": true}
+    points_multiplier = Column(Float, default=1.0)  # Earn points faster at higher tiers
+    icon = Column(String, nullable=True)
+    color = Column(String, nullable=True)  # Hex color for UI
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 
 
 class LoyaltyAccount(Base):
@@ -437,31 +412,20 @@ class LoyaltyAccount(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     points_balance = Column(Integer, default=0)
-    lifetime_points = Column(Integer, default=0)
+    lifetime_points = Column(Integer, default=0)  # Total points ever earned
     tier_id = Column(Integer, ForeignKey("reward_tiers.id"), nullable=True)
-    referral_code = Column(String, unique=True, nullable=True)
+    referral_code = Column(String, unique=True, index=True, nullable=False)
     referrals_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="loyalty_account")
+    user = relationship("User")
     tier = relationship("RewardTier")
-    points_transactions = relationship("PointsTransaction", back_populates="loyalty_account")
+    transactions = relationship("PointsTransaction", back_populates="loyalty_account")
     redemptions = relationship("Redemption", back_populates="loyalty_account")
 
-User.loyalty_account = relationship("LoyaltyAccount", back_populates="user", uselist=False)
 
-
-class RewardTier(Base):
-    __tablename__ = "reward_tiers"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    min_points = Column(Integer, default=0)
-    multiplier = Column(Float, default=1.0) # e.g., 1.2x points earning
-    description = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class PointsTransaction(Base):
@@ -469,15 +433,20 @@ class PointsTransaction(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     loyalty_account_id = Column(Integer, ForeignKey("loyalty_accounts.id"), nullable=False)
-    type = Column(String, nullable=False) # e.g., 'earn', 'redeem', 'adjustment'
-    points_amount = Column(Integer, nullable=False)
-    description = Column(Text, nullable=True)
-    related_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    transaction_type = Column(String, nullable=False)  # earn, redeem, expire, adjustment
+    points_change = Column(Integer, nullable=False)  # Positive for earn, negative for spend
+    points_balance_after = Column(Integer, nullable=False)
+    source = Column(String, nullable=False)  # purchase, review, referral, signup_bonus, admin_adjustment
+    source_id = Column(String, nullable=True)  # Order ID, Review ID, etc.
+    description = Column(String, nullable=True)
+    extra_data = Column(JSON, nullable=True)  # Additional context (renamed from metadata)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # For expiring points
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    loyalty_account = relationship("LoyaltyAccount", back_populates="points_transactions")
-    related_order = relationship("Order")
+    loyalty_account = relationship("LoyaltyAccount", back_populates="transactions")
+
+
 
 
 class Redemption(Base):
@@ -485,32 +454,66 @@ class Redemption(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     loyalty_account_id = Column(Integer, ForeignKey("loyalty_accounts.id"), nullable=False)
-    reward_tier_id = Column(Integer, ForeignKey("reward_tiers.id"), nullable=True) # If redeeming a tier-specific reward
-    type = Column(String, nullable=False) # e.g., 'discount_code', 'free_shipping', 'cash_voucher'
-    value = Column(Float, nullable=False) # e.g., 10.0 for $10 off or 0.1 for 10% off
-    code = Column(String, unique=True, nullable=True) # The actual discount code
-    is_used = Column(Boolean, default=False)
+    redemption_type = Column(String, nullable=False)  # discount_code, free_shipping, gift_card, cashback
+    points_redeemed = Column(Integer, nullable=False)
+    reward_value = Column(Float, nullable=False)  # Monetary value or percentage
+    reward_code = Column(String, unique=True, nullable=True)  # Discount/gift card code
+    status = Column(String, default="active")  # active, used, expired, cancelled
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)  # If applied to an order
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     used_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     loyalty_account = relationship("LoyaltyAccount", back_populates="redemptions")
-    reward_tier = relationship("RewardTier")
+    order = relationship("Order")
 
 
-class ProductVariantOption(Base):
-    __tablename__ = "product_variant_options"
-    
+class WithdrawalRequest(Base):
+    __tablename__ = "withdrawal_requests"
     id = Column(Integer, primary_key=True, index=True)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=False)
-    option_name = Column(String, nullable=False) # e.g., 'Color', 'Size'
-    option_value = Column(String, nullable=False) # e.g., 'Red', 'Medium'
-    
-    __table_args__ = (
-        UniqueConstraint('variant_id', 'option_name', name='_variant_option_uc'),
-    )
-    
-    # Relationships
-    product = relationship("Product")
-    variant = relationship("ProductVariant")
+    seller_id = Column(Integer, ForeignKey("sellers.id"))
+    amount = Column(Float, nullable=False)
+    status = Column(String, default="pending")  # pending, approved, rejected, paid
+    payout_reference = Column(String, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    payout_snapshot = Column(JSON, nullable=True)  # captures seller payout details at request time
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    seller = relationship("Seller")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String, nullable=False)
+    is_used = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
+
+class Banner(Base):
+    __tablename__ = "banners"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    subtitle = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    image_url = Column(String, nullable=False)
+    link_url = Column(String, nullable=True)
+    banner_type = Column(String, nullable=False)
+    position = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True)
+    start_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)
+    button_text = Column(String, nullable=True)
+    button_link = Column(String, nullable=True)
+    background_color = Column(String, nullable=True)
+    text_color = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True, onupdate=func.now())

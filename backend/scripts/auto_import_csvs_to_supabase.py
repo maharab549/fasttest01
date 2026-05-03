@@ -17,49 +17,19 @@ The script preserves import order respecting foreign keys.
 """
 from __future__ import annotations
 import os
-import sys
 import argparse
 from pathlib import Path
 import psycopg2
-import psycopg2.extras
+from sqlalchemy import create_engine
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-# Import model metadata to get accurate table names and ordering
-from app.models import (
-    User, Seller, Category, Product, ProductVariant, ProductImage, Order, OrderItem,
-    Return, ReturnItem, CartItem, Review, Notification, Message, Favorite,
-    SMSMessage, RewardTier, LoyaltyAccount, PointsTransaction, Redemption,
-    WithdrawalRequest
+from app.database import Base
+from migration_common import (
+    EXPORT_DIR,
+    MODEL_ORDER,
+    NULL_SENTINEL,
+    normalize_postgres_url,
+    reset_identity_sequence,
 )
-
-EXPORT_DIR = BASE_DIR / 'migration_exports'
-
-MODEL_ORDER = [
-    User,
-    Seller,
-    Category,
-    Product,
-    ProductImage,
-    ProductVariant,
-    Order,
-    OrderItem,
-    Return,
-    ReturnItem,
-    CartItem,
-    Review,
-    Notification,
-    Message,
-    Favorite,
-    SMSMessage,
-    RewardTier,
-    LoyaltyAccount,
-    PointsTransaction,
-    Redemption,
-    WithdrawalRequest,
-]
 
 
 def parse_args():
@@ -71,7 +41,7 @@ def parse_args():
 
 
 def connect(database_url: str):
-    conn = psycopg2.connect(database_url)
+    conn = psycopg2.connect(normalize_postgres_url(database_url))
     conn.autocommit = False
     return conn
 
@@ -88,7 +58,10 @@ def truncate_table(cur, table: str):
 def copy_csv(cur, table: str, csv_path: Path):
     # Use COPY ... FROM STDIN WITH CSV HEADER
     with csv_path.open('r', encoding='utf-8') as f:
-        cur.copy_expert(f'COPY "{table}" FROM STDIN WITH CSV HEADER', f)
+        cur.copy_expert(
+            f"COPY \"{table}\" FROM STDIN WITH CSV HEADER NULL '{NULL_SENTINEL}'",
+            f,
+        )
 
 
 def main():
@@ -99,11 +72,11 @@ def main():
     db_url = os.environ.get('SUPABASE_DATABASE_URL')
     if not db_url:
         print('ERROR: SUPABASE_DATABASE_URL not set.')
-        sys.exit(1)
+        raise SystemExit(1)
 
     if not EXPORT_DIR.exists():
         print(f'ERROR: Export dir {EXPORT_DIR} not found. Run export script first.')
-        sys.exit(1)
+        raise SystemExit(1)
 
     csv_map = {p.stem: p for p in EXPORT_DIR.glob('*.csv')}
     if not csv_map:
@@ -125,10 +98,12 @@ def main():
 
     print('Connecting to Postgres...')
     try:
+        schema_engine = create_engine(db_url, pool_pre_ping=True)
+        Base.metadata.create_all(bind=schema_engine)
         conn = connect(db_url)
     except Exception as e:
         print(f'Connection failed: {e}')
-        sys.exit(1)
+        raise SystemExit(1)
 
     cur = conn.cursor()
 
@@ -153,6 +128,7 @@ def main():
                 continue
             print(f'[DO ] Importing {path.name} -> {table}')
             copy_csv(cur, table, path)
+            reset_identity_sequence(cur, table)
             conn.commit()
             post_count = table_row_count(cur, table)
             print(f'[OK ] {table}: now {post_count} rows')
@@ -161,7 +137,7 @@ def main():
     except Exception as e:
         conn.rollback()
         print(f'ERROR during import: {e}')
-        sys.exit(1)
+        raise SystemExit(1)
     finally:
         cur.close()
         conn.close()

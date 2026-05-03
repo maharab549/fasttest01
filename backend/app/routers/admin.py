@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from .. import crud, schemas, auth
 from ..database import get_db
+from ..media_paths import make_absolute_media_url
 import math
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -195,8 +196,13 @@ def get_all_products_admin(
     pages = math.ceil(total / per_page) if total > 0 else 0
     
     # Convert products to dictionaries for serialization
-    products_data = [
-        {
+    products_data = []
+    for product in products:
+        image_urls = []
+        if isinstance(product.images, list):
+            image_urls = [make_absolute_media_url(str(img)) for img in product.images]
+
+        products_data.append({
             "id": product.id,
             "title": product.title,
             "description": product.description,
@@ -206,10 +212,9 @@ def get_all_products_admin(
             "inventory_count": product.inventory_count,
             "is_active": product.is_active,
             "created_at": product.created_at.isoformat() if product.created_at else None,
-            "images": product.images
-        }
-        for product in products
-    ]
+            "images": image_urls,
+            "primary_image_url": image_urls[0] if image_urls else None,
+        })
     
     return {
         "items": products_data,
@@ -775,13 +780,16 @@ def get_pending_products(
         if product.images is not None:
             image_ids = product.images if isinstance(product.images, list) else []
             try:
-                if len(image_ids) > 0:
+                if image_ids and all(isinstance(x, int) for x in image_ids):
                     product_images = db.query(ProductImage).filter(
                         ProductImage.id.in_(image_ids)
                     ).all()
-                    product_dict["images"] = [img.image_url for img in product_images] if product_images else []
+                    product_dict["images"] = [make_absolute_media_url(img.image_url) for img in product_images] if product_images else []
+                elif image_ids:
+                    product_dict["images"] = [make_absolute_media_url(str(img)) for img in image_ids]
             except Exception:
                 product_dict["images"] = []
+        product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
         
         result.append(product_dict)
     

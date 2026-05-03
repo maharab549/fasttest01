@@ -4,6 +4,10 @@ from typing import Iterable
 from sqlalchemy.engine import Engine
 
 
+def _is_sqlite(engine: Engine) -> bool:
+    return getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
+
+
 def _get_sqlite_columns(engine: Engine, table: str) -> list[str]:
     """Return list of column names for a SQLite table."""
     with engine.connect() as conn:
@@ -63,6 +67,8 @@ def coalesce_orders_null_status(engine: Engine) -> None:
 
 def run_all(engine: Engine) -> None:
     """Run all lightweight startup migrations idempotently."""
+    if not _is_sqlite(engine):
+        return
     try:
         ensure_message_attachment_columns(engine)
     except Exception:

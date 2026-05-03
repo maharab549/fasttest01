@@ -163,25 +163,43 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        
-        # Add security headers
+
+        # Common security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        
-        # Content Security Policy (adjust as needed)
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self' data:; "
-            "connect-src 'self' ws: wss:;"
-        )
-        
+
+        # Relax CSP for API docs and OpenAPI JSON so the Swagger UI / ReDoc assets
+        # (which may be loaded from external CDNs or injected inline) are not blocked.
+        docs_paths = ("/api/docs", "/api/redoc", "/openapi.json", "/api/openapi.json")
+        request_path = request.url.path or ""
+
+        if any(request_path.startswith(p) for p in docs_paths):
+            # Permissive policy for docs endpoints (safe in dev; tighten for prod)
+            csp = (
+                "default-src 'self' data: blob: 'unsafe-inline' https:; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; "
+                "style-src 'self' 'unsafe-inline' https:; "
+                "img-src 'self' data: https:; "
+                "connect-src 'self' https: ws: wss:; "
+                "font-src 'self' data: https:;"
+            )
+        else:
+            # Strict policy for regular API responses
+            csp = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' ws: wss:;"
+            )
+
+        response.headers["Content-Security-Policy"] = csp
+
         return response
 
 

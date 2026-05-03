@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from sqlalchemy.sql import expression
@@ -7,6 +6,7 @@ from typing import List, Optional, Dict, Any, cast
 from .. import crud, schemas, auth
 from ..database import get_db
 from ..config import settings
+from ..media_paths import make_absolute_media_url
 from app import models
 
 # Whether to run AI-powered semantic search. Read from settings if available,
@@ -18,8 +18,6 @@ import uuid
 import math
 import os
 import shutil
-import json
-import traceback
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -28,85 +26,6 @@ router = APIRouter(prefix="/products", tags=["products"])
 # utility moved/removed. If you need to re-enable image-based search, reintroduce a
 # purpose-built, tested module. For now, keep product endpoints focused on text-based
 # search and recommendations.
-
-
-def _format_variant_for_response(variant, db):
-    """Convert a ProductVariant ORM object into a dict with image URLs resolved.
-    - The model stores `images` as JSON string of ProductImage IDs or URLs (in Text column).
-    - This resolves IDs to URLs and orders: primary first, non-placeholder next, placeholders last.
-    """
-    # Base fields
-    variant_dict = {
-        "id": variant.id,
-        "product_id": variant.product_id,
-        "sku": getattr(variant, "sku", None),
-        "variant_name": getattr(variant, "variant_name", None),
-        "color": getattr(variant, "color", None),
-        "size": getattr(variant, "size", None),
-        "material": getattr(variant, "material", None),
-        "style": getattr(variant, "style", None),
-        "storage": getattr(variant, "storage", None),
-        "ram": getattr(variant, "ram", None),
-        "other_attributes": getattr(variant, "other_attributes", None),
-        "price_adjustment": getattr(variant, "price_adjustment", 0.0),
-        "inventory_count": getattr(variant, "inventory_count", 0),
-        "is_active": getattr(variant, "is_active", True),
-        "created_at": getattr(variant, "created_at", None),
-        "updated_at": getattr(variant, "updated_at", None),
-        "images": []
-    }
-
-    # Helper to normalize relative URLs into served /uploads paths
-    def _norm(u: str) -> str:
-        try:
-            s = str(u)
-        except Exception:
-            return str(u)
-        if s.startswith('http'):
-            return s
-        if s.startswith('/uploads/'):
-            return s
-        if s.startswith('uploads/'):
-            return '/' + s
-        if s.startswith('/products/'):
-            return '/uploads' + s
-        if s.startswith('products/'):
-            return '/uploads/' + s
-        return s
-
-    # Resolve images from JSON/Text
-    try:
-        raw = getattr(variant, "images", None)
-        imgs = None
-        if isinstance(raw, list):
-            imgs = raw
-        elif isinstance(raw, str) and raw.strip():
-            try:
-                imgs = json.loads(raw)
-            except Exception:
-                imgs = None
-        if isinstance(imgs, list) and imgs:
-            if all(isinstance(x, int) for x in imgs):
-                image_objs = db.query(models.ProductImage).filter(models.ProductImage.id.in_(imgs)).all()
-                def image_sort_key(img):
-                    placeholder_penalty = 1 if "placeholder-" in str(img.image_url) else 0
-                    primary_rank = 0 if getattr(img, "is_primary", False) else 1
-                    return (primary_rank, placeholder_penalty, getattr(img, "sort_order", 0))
-                image_objs_sorted = sorted(image_objs, key=image_sort_key)
-                variant_dict["images"] = [_norm(str(img.image_url)) for img in image_objs_sorted]
-            else:
-                urls = [_norm(str(x)) for x in imgs]
-                if len(urls) > 1:
-                    non_placeholder = [u for u in urls if "placeholder-" not in u]
-                    if non_placeholder:
-                        first_real = non_placeholder[0]
-                        urls = [first_real] + [u for u in urls if u != first_real]
-                variant_dict["images"] = urls
-    except Exception as e:
-        if settings.debug:
-            print(f"[IMG_DEBUG] Variant {getattr(variant,'id','?')} image resolution error: {e}")
-
-    return variant_dict
 
 
 def format_product_for_response(product, db):
@@ -143,83 +62,32 @@ def format_product_for_response(product, db):
         "rejection_reason": product.rejection_reason,
         "approved_at": product.approved_at,
         "approved_by": product.approved_by,
-        # Variants formatted below for proper image resolution
-        "variants": [],
+        "variants": product.variants or [],
         "seller": product.seller,
     }
     
-    # Helper to normalize relative URLs into served /uploads paths
-    def _norm(u: str) -> str:
-        try:
-            s = str(u)
-        except Exception:
-            return str(u)
-        if s.startswith('http'):
-            return s
-        if s.startswith('/uploads/'):
-            return s
-        if s.startswith('uploads/'):
-            return '/' + s
-        if s.startswith('/products/'):
-            return '/uploads' + s
-        if s.startswith('products/'):
-            return '/uploads/' + s
-        return s
-
     # Resolve images: support both legacy URL lists and normalized ID lists
     try:
         if isinstance(product.images, list):
             if all(isinstance(x, int) for x in product.images):
+                # IDs -> lookup URLs from ProductImage
                 id_list = list(product.images)
-                if id_list:
-                    image_objs = db.query(models.ProductImage).filter(
+                if len(id_list) > 0:
+                    product_images = db.query(models.ProductImage).filter(
                         models.ProductImage.id.in_(id_list)
                     ).all()
-                    def image_sort_key(img):
-                        placeholder_penalty = 1 if "placeholder-" in str(img.image_url) else 0
-                        primary_rank = 0 if getattr(img, "is_primary", False) else 1
-                        return (primary_rank, placeholder_penalty, getattr(img, "sort_order", 0))
-                    image_objs_sorted = sorted(image_objs, key=image_sort_key)
-                    ordered_urls = [_norm(str(img.image_url)) for img in image_objs_sorted]
-                    product_dict["images"] = ordered_urls
-                    if settings.debug:
-                        print(f"[IMG_DEBUG] Product {product.slug} IDs->{id_list} resolved->{ordered_urls[:3]}")
+                    # Preserve order of id_list when returning URLs
+                    id_to_url = {img.id: str(img.image_url) for img in product_images}
+                    product_dict["images"] = [id_to_url[i] for i in id_list if i in id_to_url]
             else:
-                raw_urls = [_norm(str(x)) for x in list(product.images)]
-                if len(raw_urls) > 1:
-                    non_placeholder = [u for u in raw_urls if "placeholder-" not in u]
-                    if non_placeholder:
-                        first_real = non_placeholder[0]
-                        raw_urls = [first_real] + [u for u in raw_urls if u != first_real]
-                product_dict["images"] = raw_urls
-                if settings.debug:
-                    print(f"[IMG_DEBUG] Product {product.slug} raw URLs->{raw_urls[:3]}")
-        # Fallback: if product.images is empty or None but ProductImage rows exist, pull them.
-        if (not isinstance(product.images, list) or len(product.images) == 0):
-            image_objs = db.query(models.ProductImage).filter(models.ProductImage.product_id == product.id).all()
-            if image_objs:
-                def image_sort_key(img):
-                    placeholder_penalty = 1 if "placeholder-" in str(img.image_url) else 0
-                    primary_rank = 0 if getattr(img, "is_primary", False) else 1
-                    return (primary_rank, placeholder_penalty, getattr(img, "sort_order", 0))
-                image_objs_sorted = sorted(image_objs, key=image_sort_key)
-                fallback_urls = [_norm(str(img.image_url)) for img in image_objs_sorted]
-                product_dict["images"] = fallback_urls
-                if settings.debug:
-                    print(f"[IMG_DEBUG] Product {product.slug} fallback ProductImage rows -> {fallback_urls[:3]}")
-    except Exception as e:
+                # Already URLs -> pass through
+                product_dict["images"] = [str(x) for x in list(product.images)]
+    except Exception:
         product_dict["images"] = []
-        if settings.debug:
-            print(f"[IMG_DEBUG] Product {getattr(product,'slug','?')} image resolution error: {e}")
     
-    # Attach formatted variants (if any), resolving variant images to URLs
-    try:
-        if getattr(product, "variants", None):
-            product_dict["variants"] = [_format_variant_for_response(v, db) for v in product.variants]
-    except Exception as e:
-        if settings.debug:
-            print(f"[IMG_DEBUG] Product {getattr(product,'slug','?')} variant formatting error: {e}")
-
+    # Convert image paths to absolute URLs and include primary_image_url
+    product_dict["images"] = [make_absolute_media_url(u) for u in product_dict["images"]]
+    product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
     return product_dict
 
 
@@ -235,7 +103,6 @@ def get_products(
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
     with_meta: bool = Query(False),
-    response: Response = None,
     db: Session = Depends(get_db)
 ):
     """Get products with filtering, sorting, and pagination"""
@@ -270,10 +137,6 @@ def get_products(
         # Convert products to dict format using the helper
         products_data = [format_product_for_response(product, db) for product in products]
         
-        # Add caching headers for better performance
-        if response:
-            response.headers["Cache-Control"] = "public, max-age=300"
-        
         if with_meta:
             return {
                 "items": products_data,
@@ -286,12 +149,6 @@ def get_products(
         # Historically some clients expect a plain list; return list for compatibility
         return products_data
     except Exception as e:
-        # Print full traceback to logs when debug is enabled to aid diagnosis in production
-        try:
-            if getattr(settings, 'debug', False):
-                print(traceback.format_exc())
-        except Exception:
-            pass
         raise HTTPException(status_code=500, detail=f"Error fetching products: {str(e)}")
 
 
@@ -309,11 +166,6 @@ def get_featured_products(limit: int = Query(8, ge=1, le=20), db: Session = Depe
         # Convert products to dict format using the helper
         return [format_product_for_response(product, db) for product in products]
     except Exception as e:
-        try:
-            if getattr(settings, 'debug', False):
-                print(traceback.format_exc())
-        except Exception:
-            pass
         raise HTTPException(status_code=500, detail=f"Error fetching featured products: {str(e)}")
 
 
@@ -361,9 +213,23 @@ def search_products(
         # Convert products to dict format
         products_data = []
         for product in products:
-            # Use unified formatter for consistency (includes image ordering logic)
-            formatted = format_product_for_response(product, db)
-            image_urls: list[str] = formatted.get("images", [])
+            # Resolve images via hybrid logic (IDs -> URLs or pass-through URLs)
+            image_urls: list[str] = []
+            try:
+                if isinstance(product.images, list):
+                    if all(isinstance(x, int) for x in product.images):
+                        id_list = list(product.images)
+                        if len(id_list) > 0:
+                            product_images = db.query(models.ProductImage).filter(
+                                models.ProductImage.id.in_(id_list)
+                            ).all()
+                            id_to_url = {img.id: str(img.image_url) for img in product_images}
+                            image_urls = [id_to_url[i] for i in id_list if i in id_to_url]
+                            image_urls = [make_absolute_media_url(u) for u in image_urls]
+                    else:
+                        image_urls = [make_absolute_media_url(str(x)) for x in list(product.images)]
+            except Exception:
+                image_urls = []
 
             product_dict = {
                 "id": product.id,
@@ -387,6 +253,8 @@ def search_products(
                 "created_at": product.created_at.isoformat() if product.created_at is not None else None,
                 "updated_at": product.updated_at.isoformat() if product.updated_at is not None else None
             }
+            # primary image
+            product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
             products_data.append(product_dict)
         
         return {
@@ -397,115 +265,131 @@ def search_products(
             "pages": pages
         }
     except Exception as e:
-        try:
-            if getattr(settings, 'debug', False):
-                print(traceback.format_exc())
-        except Exception:
-            pass
         raise HTTPException(status_code=500, detail=f"Error searching products: {str(e)}")
 
 
 @router.get("/slug/{slug}", response_model=schemas.Product)
 @router.get("/slug/{slug}/", response_model=schemas.Product)
 def get_product_by_slug(slug: str, db: Session = Depends(get_db)):
-    """Get product by slug using unified formatter for consistent image ordering."""
+    """Get product by slug"""
     product = crud.get_product_by_slug(db=db, slug=slug)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return format_product_for_response(product, db)
+    
+    # Create a dict from the product to avoid modifying ORM object
+    product_dict = {
+        "id": product.id,
+        "seller_id": product.seller_id,
+        "category_id": product.category_id,
+        "title": product.title,
+        "slug": product.slug,
+        "description": product.description,
+        "short_description": product.short_description,
+        "price": product.price,
+        "compare_price": product.compare_price,
+        "sku": product.sku,
+        "inventory_count": product.inventory_count,
+        "weight": product.weight,
+        "dimensions": product.dimensions,
+        "images": [],
+        "is_active": product.is_active,
+        "is_featured": product.is_featured,
+        "has_variants": product.has_variants,
+        "rating": product.rating,
+        "review_count": product.review_count,
+        "view_count": product.view_count,
+        "created_at": product.created_at,
+        "updated_at": product.updated_at,
+        "approval_status": product.approval_status,
+        "rejection_reason": product.rejection_reason,
+        "approved_at": product.approved_at,
+        "approved_by": product.approved_by,
+        "variants": product.variants or [],
+        "seller": product.seller,
+    }
+    
+    # Resolve images (IDs -> URLs or pass-through URLs)
+    try:
+        if isinstance(product.images, list):
+            if all(isinstance(x, int) for x in product.images):
+                id_list = list(product.images)
+                if len(id_list) > 0:
+                    product_images = db.query(models.ProductImage).filter(
+                        models.ProductImage.id.in_(id_list)
+                    ).all()
+                    id_to_url = {img.id: str(img.image_url) for img in product_images}
+                    product_dict["images"] = [id_to_url[i] for i in id_list if i in id_to_url]
+            else:
+                product_dict["images"] = [str(x) for x in list(product.images)]
+    except Exception:
+        product_dict["images"] = []
+    
+    # Convert to absolute URLs and include primary_image_url
+    product_dict["images"] = [make_absolute_media_url(u) for u in product_dict["images"]]
+    product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
+    return product_dict
 
 
 @router.get("/{product_id}", response_model=schemas.Product)
 @router.get("/{product_id}/", response_model=schemas.Product)
 def get_product(product_id: int, db: Session = Depends(get_db)):
-    """Get product by ID using unified formatter for consistent image ordering."""
+    """Get product by ID"""
     product = crud.get_product(db=db, product_id=product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return format_product_for_response(product, db)
-
-
-# -----------------------------
-# Image management endpoints
-# -----------------------------
-class ReorderImagesRequest(BaseModel):
-    image_ids: list[int]
-
-
-@router.post("/{product_id}/images/{image_id}/primary")
-def set_primary_image(
-    product_id: int,
-    image_id: int,
-    db: Session = Depends(get_db),
-    current_user: schemas.User = Depends(auth.get_current_seller)
-):
-    """Mark one image as primary for a product (seller-owned)."""
-    # Validate seller owns product
-    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
-    if not seller:
-        raise HTTPException(status_code=400, detail="Seller profile not found")
-
-    product = crud.get_product(db=db, product_id=product_id)
-    if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-    # Compare by value explicitly to avoid SQLAlchemy boolean coercion
-    if int(getattr(product, "seller_id")) != int(getattr(seller, "id")):
-        raise HTTPException(status_code=403, detail="Not authorized to modify this product")
-
-    # Validate image belongs to product
-    img = db.query(models.ProductImage).filter(
-        models.ProductImage.id == image_id,
-        models.ProductImage.product_id == product_id
-    ).first()
-    if img is None:
-        raise HTTPException(status_code=404, detail="Image not found for this product")
-
-    # Set all non-primary, then desired primary
-    db.query(models.ProductImage).filter(
-        models.ProductImage.product_id == product_id
-    ).update({models.ProductImage.is_primary: False})
-    db.query(models.ProductImage).filter(models.ProductImage.id == image_id).update({
-        models.ProductImage.is_primary: True
-    })
-    db.commit()
-    return {"message": "Primary image updated."}
-
-
-@router.post("/{product_id}/images/reorder")
-def reorder_images(
-    product_id: int,
-    payload: ReorderImagesRequest,
-    db: Session = Depends(get_db),
-    current_user: schemas.User = Depends(auth.get_current_seller)
-):
-    """Reorder images for a product by specifying the exact sequence of image IDs.
-    Only reorders the provided IDs (others keep their current sort_order)."""
-    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
-    if not seller:
-        raise HTTPException(status_code=400, detail="Seller profile not found")
-
-    product = crud.get_product(db=db, product_id=product_id)
-    if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-    if int(getattr(product, "seller_id")) != int(getattr(seller, "id")):
-        raise HTTPException(status_code=403, detail="Not authorized to modify this product")
-
-    # Ensure all IDs belong to product
-    imgs = db.query(models.ProductImage).filter(
-        models.ProductImage.product_id == product_id,
-        models.ProductImage.id.in_(payload.image_ids)
-    ).all()
-    found_ids = {img.id for img in imgs}
-    missing = [i for i in payload.image_ids if i not in found_ids]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Image IDs not found for this product: {missing}")
-
-    for order, iid in enumerate(payload.image_ids):
-        db.query(models.ProductImage).filter(
-            models.ProductImage.id == iid
-        ).update({models.ProductImage.sort_order: order})
-    db.commit()
-    return {"message": "Images reordered.", "order": payload.image_ids}
+    
+    # Create a dict from the product to avoid modifying ORM object
+    product_dict = {
+        "id": product.id,
+        "seller_id": product.seller_id,
+        "category_id": product.category_id,
+        "title": product.title,
+        "slug": product.slug,
+        "description": product.description,
+        "short_description": product.short_description,
+        "price": product.price,
+        "compare_price": product.compare_price,
+        "sku": product.sku,
+        "inventory_count": product.inventory_count,
+        "weight": product.weight,
+        "dimensions": product.dimensions,
+        "images": [],
+        "is_active": product.is_active,
+        "is_featured": product.is_featured,
+        "has_variants": product.has_variants,
+        "rating": product.rating,
+        "review_count": product.review_count,
+        "view_count": product.view_count,
+        "created_at": product.created_at,
+        "updated_at": product.updated_at,
+        "approval_status": product.approval_status,
+        "rejection_reason": product.rejection_reason,
+        "approved_at": product.approved_at,
+        "approved_by": product.approved_by,
+        "variants": product.variants or [],
+        "seller": product.seller,
+    }
+    
+    # Resolve images (IDs -> URLs or pass-through URLs)
+    try:
+        if isinstance(product.images, list):
+            if all(isinstance(x, int) for x in product.images):
+                id_list = list(product.images)
+                if len(id_list) > 0:
+                    product_images = db.query(models.ProductImage).filter(
+                        models.ProductImage.id.in_(id_list)
+                    ).all()
+                    id_to_url = {img.id: str(img.image_url) for img in product_images}
+                    product_dict["images"] = [id_to_url[i] for i in id_list if i in id_to_url]
+            else:
+                product_dict["images"] = [str(x) for x in list(product.images)]
+    except Exception:
+        product_dict["images"] = []
+    
+    # Convert to absolute URLs and include primary_image_url
+    product_dict["images"] = [make_absolute_media_url(u) for u in product_dict["images"]]
+    product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
+    return product_dict
 
 
 @router.post("/{slug}/view")
@@ -917,4 +801,3 @@ def upload_product_image(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error uploading image: {str(e)}")
-

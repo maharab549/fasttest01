@@ -1,7 +1,9 @@
-id,user_id,store_name,store_description,store_slug,is_verified,rating,total_sales,created_at,balance,payout_method,bank_name,bank_account_name,bank_account_number,bank_routing_number,paypal_email,stripe_email
-1,2,Tech Paradise,Your one-stop shop for all tech gadgets,tech-paradise,1,0.0,0,2025-09-17 08:45:33,1286.7289999999998,paypal,,Test Seller,DE89370400440532013000,MARKDEFF,asdas@gmail.com,
-2,3,Fashion Hub,Latest trends in fashion and style,fashion-hub,1,0.0,0,2025-09-17 08:45:33,0.0,,,,,,,
-3,4,Book Haven,Discover your next favorite book,book-haven,1,0.0,0,2025-09-17 08:45:33,0.0,,,,,,,
-4,8,TC Store,x,tc-store-8,1,0.0,0,2025-11-07 04:20:19,0.0,,,,,,,
-5,9,Test Seller's Store,Welcome to Test Seller's store!,test_seller,1,0.0,0,2025-11-07 04:41:06,0.0,,,,,,,
-6,,Maharab Hossen's Store,Welcome to Maharab Hossen's store!,maharab,1,0.0,0,2025-11-08 04:49:29,1782000000.0,paypal,,,,,maharab131@gmail.com,
+id,user_id,store_name,store_description,store_slug,is_verified,rating,total_sales,balance,payout_method,bank_name,bank_account_name,bank_account_number,bank_routing_number,paypal_email,stripe_email,created_at
+1,2,Tech Paradise,Your one-stop shop for all tech gadgets,tech-paradise,true,0.0,0,1286.7289999999998,paypal,\N,Test Seller,DE89370400440532013000,MARKDEFF,asdas@gmail.com,\N,2025-09-17T08:45:33
+2,3,Fashion Hub,Latest trends in fashion and style,fashion-hub,true,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-09-17T08:45:33
+3,4,Book Haven,Discover your next favorite book,book-haven,true,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-09-17T08:45:33
+4,8,TC Store,x,tc-store-8,true,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-11-07T04:20:19
+5,9,Test Seller's Store,Welcome to Test Seller's store!,test_seller,true,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-11-07T04:41:06
+6,\N,Maharab Hossen's Store,Welcome to Maharab Hossen's store!,maharab,true,0.0,0,1782000000.0,paypal,\N,\N,\N,\N,maharab131@gmail.com,\N,2025-11-08T04:49:29
+7,12,test's Store,Welcome to test's store!,test,false,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-11-12T11:51:42
+8,14,Maharab's Store,Welcome to Maharab's store!,hossen,false,0.0,0,0.0,\N,\N,\N,\N,\N,\N,\N,2025-11-13T05:42:38

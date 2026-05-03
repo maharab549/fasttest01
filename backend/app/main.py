@@ -8,6 +8,7 @@ from .config import settings
 from .database import engine
 from . import models
 from . import db_migrations
+from .media_paths import resolve_media_file
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
@@ -21,22 +22,11 @@ from .security_middleware import (
 )
 import os
 from datetime import datetime
-from sqlalchemy import text
 
 # ----------------------------------------------------------------
 # Database initialization
 # ----------------------------------------------------------------
-try:
-    # Creating tables at import time can cause the app to crash on startup
-    # if the configured database is unreachable (e.g., Supabase network issues).
-    # Wrap in a try/except so the process can start and surface logs for
-    # debugging instead of failing silently with an import-time traceback.
-    models.Base.metadata.create_all(bind=engine)
-except Exception as e:
-    import traceback
-    print("[WARNING] Could not initialize database schema at import time:")
-    print(traceback.format_exc())
-    print("[WARNING] Continuing startup; the database may be unavailable.\n")
+models.Base.metadata.create_all(bind=engine)
 
 # ----------------------------------------------------------------
 # FastAPI app creation
@@ -62,37 +52,56 @@ app.add_middleware(RequestLoggingMiddleware)
 # Add rate limiting middleware - DISABLED for development
 # app.add_middleware(RateLimitMiddleware, requests_per_minute=300, requests_per_hour=5000)
 
-if not settings.debug:
+api_base = (settings.api_base_url or "").lower()
+should_force_https = (not settings.debug) and api_base.startswith("https://")
+
+if should_force_https:
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # ----------------------------------------------------------------
 # CORS configuration (important for Netlify frontend)
 # ----------------------------------------------------------------
-# Default hard-coded frontend origins (used as fallback when no env-provided list)
 frontend_origins = [
     "https://megamartcom.netlify.app",
+    "https://agent-68e40a8b6477a43674ce2f57--megamartcom.netlify.app",
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:3000",
     "http://192.168.56.1:5173"
 ]
 
-# Determine effective allowlist: prefer settings.cors_origins (from env/.env),
-# fall back to the built-in `frontend_origins` when not set. In debug mode allow all.
-if settings.debug:
-    effective_origins = ["*"]
-else:
-    # settings.cors_origins is a List[str], possibly empty
-    effective_origins = settings.cors_origins if settings.cors_origins else frontend_origins
-# Log the effective CORS origins for easier debugging in deployment logs
-print(f"[CORS] Effective allow-origins: {effective_origins}")
+# Configure CORS. Use an explicit allowlist even in development so credentialed
+# requests receive a specific Access-Control-Allow-Origin header (browsers
+# reject "*" when Access-Control-Allow-Credentials is true).
+# Merge any configured origins (env) with the hardcoded frontend list and a
+# safe default. Use dict.fromkeys to preserve order and de-duplicate.
+env_origins = settings.cors_origins or []
+merged = env_origins + frontend_origins + ["http://localhost:5173"]
+cors_allowlist = list(dict.fromkeys(merged))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=effective_origins,
+    allow_origins=cors_allowlist,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Trusted hosts
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[
+        "localhost",
+        "127.0.0.1",
+        "10.0.2.2",
+        "0.0.0.0",
+        "192.168.56.1",
+        # TestClient uses host 'testserver' during pytest runs
+        "testserver",
+        "*.vercel.app",
+        "*.onrender.com",
+        "megamartcom.netlify.app"
+    ]
 )
 
 # ----------------------------------------------------------------
@@ -100,7 +109,16 @@ app.add_middleware(
 # ----------------------------------------------------------------
 uploads_dir = "uploads"
 os.makedirs(uploads_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
+# Serve uploaded files with explicit headers so browsers don't cache during development.
+@app.get("/uploads/{file_path:path}")
+def serve_uploads(file_path: str):
+    full_path = resolve_media_file(f"/uploads/{file_path}")
+    if not full_path:
+        raise HTTPException(status_code=404, detail="File not found")
+    # Use FileResponse to serve the file and set Cache-Control header for dev
+    from fastapi.responses import FileResponse
+    return FileResponse(str(full_path), headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
 
 # ----------------------------------------------------------------
 # Include routers
@@ -193,47 +211,6 @@ async def test_frontend(request: Request):
 async def test_frontend_alias(request: Request):
     return await test_frontend(request)
 
-@app.get("/api/v1/debug/image-test/{product_id}")
-def debug_image_test(product_id: int):
-    """Test endpoint to verify image file exists and is accessible"""
-    import os
-    from pathlib import Path
-    
-    image_path = f"uploads/products/product_{product_id}.png"
-    full_path = Path(image_path)
-    
-    return {
-        "product_id": product_id,
-        "image_path": image_path,
-        "file_exists": full_path.exists(),
-        "file_size": full_path.stat().st_size if full_path.exists() else None,
-        "absolute_path": str(full_path.absolute()),
-        "image_url": f"/uploads/products/product_{product_id}.png"
-    }
-
-
-# Debug endpoint to check database connectivity. Only enabled when debug mode is on.
-@app.get("/api/v1/debug/db_status")
-def debug_db_status():
-    """Return a quick DB connectivity check. Only available when settings.debug == True."""
-    from fastapi import HTTPException
-    import traceback
-
-    if not settings.debug:
-        raise HTTPException(status_code=403, detail="Debug endpoint disabled")
-
-    try:
-        with engine.connect() as conn:
-            # Run a minimal query to validate connectivity
-            result = conn.execute(text("SELECT 1"))
-            scalar = result.scalar()
-        return {"db": "ok", "result": scalar}
-    except Exception as e:
-        tb = traceback.format_exc()
-        # Include CORS headers so frontend can read this error during debugging
-        headers = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"}
-        return JSONResponse(status_code=500, content={"db": "error", "error": str(e), "trace": tb}, headers=headers)
-
 # ----------------------------------------------------------------
 # Exception handlers
 # ----------------------------------------------------------------
@@ -253,18 +230,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     print(f"UNHANDLED EXCEPTION on {request.method} {request.url.path}:")
     print(traceback.format_exc())
     print("=" * 80)
-    # Ensure CORS headers are present even for internal errors so the frontend
-    # receives the JSON body instead of the browser blocking it.
-    origin = request.headers.get("origin")
-    allow_origin = origin if origin else "*"
-    headers = {
-        "Access-Control-Allow-Origin": allow_origin,
-        "Access-Control-Allow-Credentials": "true",
-    }
     return JSONResponse(
         status_code=500, 
-        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__},
-        headers=headers
+        content={"detail": "Internal server error", "error": str(exc), "type": type(exc).__name__}
     )
 
 @app.exception_handler(500)
@@ -274,13 +242,7 @@ async def internal_error_handler(request: Request, exc):
     print("500 INTERNAL SERVER ERROR:")
     print(traceback.format_exc())
     print("=" * 80)
-    origin = request.headers.get("origin")
-    allow_origin = origin if origin else "*"
-    headers = {
-        "Access-Control-Allow-Origin": allow_origin,
-        "Access-Control-Allow-Credentials": "true",
-    }
-    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)}, headers=headers)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
 
 # ----------------------------------------------------------------
 # Entry point

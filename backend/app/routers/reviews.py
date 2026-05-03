@@ -84,7 +84,23 @@ def create_review(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # If order_id provided, validate the order belongs to the user and is delivered
+    # Always enforce purchase requirement: user must have at least one delivered
+    # order containing this product.
+    delivered_order = db.query(models.Order).join(
+        models.OrderItem
+    ).filter(
+        models.Order.user_id == current_user.id,
+        models.Order.status == "delivered",
+        models.OrderItem.product_id == review.product_id
+    ).first()
+
+    if not delivered_order:
+        raise HTTPException(
+            status_code=400,
+            detail="You can only review products from delivered orders"
+        )
+
+    # If order_id is provided, it must match the user's delivered order context.
     if review.order_id:
         order = crud.get_order(db=db, order_id=review.order_id)
         if not order:
@@ -93,6 +109,12 @@ def create_review(
             raise HTTPException(status_code=403, detail="Not authorized to review this order")
         if order.status != "delivered":
             raise HTTPException(status_code=400, detail="Only delivered orders can be reviewed")
+        contains_product = any((item.product_id == review.product_id) for item in order.order_items)
+        if not contains_product:
+            raise HTTPException(status_code=400, detail="Order does not contain this product")
+
+    if not review.order_id and delivered_order and isinstance(delivered_order.id, int):
+        review.order_id = delivered_order.id
 
     # Prevent duplicate reviews for same product by same user
     existing = db.query(models.Review).filter(

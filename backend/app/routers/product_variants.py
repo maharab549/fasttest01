@@ -7,8 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile,
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
-import json
-import uuid
 from datetime import datetime
 import shutil
 
@@ -23,16 +21,23 @@ from app.schemas import (
 )
 from app.auth import get_current_user
 from app.crud import get_user
+from sqlalchemy import desc as sql_desc
+from app.config import settings
 
-def _authorized_for_product(db: Session, product_id: int, current_user: User) -> bool:
-    """Check if the current user owns the product or is an admin, using scalar values."""
-    owner_id = db.query(Product.seller_id).filter(Product.id == product_id).scalar()
-    # current_user.id should already be a plain int from auth; fallback to None
-    user_id_val = getattr(current_user, 'id', None)
-    is_admin_val = db.query(User.is_admin).filter(User.id == user_id_val).scalar() or False
-    return (owner_id is not None and user_id_val is not None and owner_id == user_id_val) or bool(is_admin_val)
 
-router = APIRouter(prefix="/products", tags=["products"])
+# Helper to convert stored image paths to absolute URLs
+def _abs_url(u: str) -> str:
+    if not u:
+        return u
+    u = str(u)
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    base = settings.api_base_url.rstrip("/")
+    if u.startswith("/"):
+        return f"{base}{u}"
+    return f"{base}/{u}"
+
+router = APIRouter(prefix="/api/v1", tags=["products"])
 
 # Upload directory
 UPLOAD_DIR = "uploads/products"
@@ -41,7 +46,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ==================== PRODUCT IMAGES ====================
 
-@router.post("/{product_id}/images", response_model=ProductImageSchema)
+@router.post("/products/{product_id}/images", response_model=ProductImageSchema)
 def add_product_image(
     product_id: int,
     db: Session = Depends(get_db),
@@ -57,8 +62,8 @@ def add_product_image(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Verify seller owns this product (avoid SQLAlchemy boolean coercion)
-    if not _authorized_for_product(db, product_id, current_user):
+    # Verify seller owns this product
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized to edit this product")
     
     # If marking as primary, unset other primaries
@@ -83,21 +88,38 @@ def add_product_image(
     return db_image
 
 
-@router.get("/{product_id}/images", response_model=List[ProductImageSchema])
+@router.get("/products/{product_id}/images", response_model=List[ProductImageSchema])
 def get_product_images(product_id: int, db: Session = Depends(get_db)):
     """Get all images for a product, sorted by order"""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
+    # Order deterministically: primary images first, then by sort_order, then by creation time
     images = db.query(ProductImage).filter(
         ProductImage.product_id == product_id
-    ).order_by(ProductImage.sort_order).all()
+    ).order_by(
+        ProductImage.is_primary.desc(),
+        ProductImage.sort_order.asc(),
+        ProductImage.created_at.asc()
+    ).all()
     
-    return images
+    out = [
+        {
+            "id": img.id,
+            "image_url": _abs_url(str(img.image_url)),
+            "alt_text": img.alt_text,
+            "is_primary": img.is_primary,
+            "sort_order": img.sort_order,
+            "created_at": img.created_at,
+        }
+        for img in images
+    ]
+
+    return out
 
 
-@router.put("/{product_id}/images/{image_id}", response_model=ProductImageSchema)
+@router.put("/products/{product_id}/images/{image_id}", response_model=ProductImageSchema)
 def update_product_image(
     product_id: int,
     image_id: int,
@@ -114,7 +136,7 @@ def update_product_image(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get image
@@ -131,27 +153,21 @@ def update_product_image(
             ProductImage.product_id == product_id,
             ProductImage.is_primary == True
         ).update({ProductImage.is_primary: False})
-
-    # Update fields using update() to avoid InstrumentedAttribute assignment issues
-    update_values = {}
+    
+    # Update fields
     if alt_text is not None:
-        update_values[ProductImage.alt_text] = alt_text
+        image.alt_text = alt_text
     if is_primary is not None:
-        update_values[ProductImage.is_primary] = bool(is_primary)
+        image.is_primary = is_primary
     if sort_order is not None:
-        update_values[ProductImage.sort_order] = int(sort_order)
-    if update_values:
-        db.query(ProductImage).filter(
-            ProductImage.id == image_id,
-            ProductImage.product_id == product_id
-        ).update(update_values)
-        db.commit()
-    # Return fresh row
-    updated = db.query(ProductImage).filter(ProductImage.id == image_id).first()
-    return updated
+        image.sort_order = sort_order
+    
+    db.commit()
+    db.refresh(image)
+    return image
 
 
-@router.delete("/{product_id}/images/{image_id}")
+@router.delete("/products/{product_id}/images/{image_id}")
 def delete_product_image(
     product_id: int,
     image_id: int,
@@ -165,7 +181,7 @@ def delete_product_image(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get and delete image
@@ -182,7 +198,7 @@ def delete_product_image(
     return {"message": "Image deleted successfully"}
 
 
-@router.put("/{product_id}/images/{image_id}/set-primary")
+@router.put("/products/{product_id}/images/{image_id}/set-primary")
 def set_primary_image(
     product_id: int,
     image_id: int,
@@ -196,7 +212,7 @@ def set_primary_image(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get image
@@ -214,7 +230,7 @@ def set_primary_image(
     ).update({ProductImage.is_primary: False})
     
     # Set this as primary
-    db.query(ProductImage).filter(ProductImage.id == image_id).update({ProductImage.is_primary: True})
+    image.is_primary = True
     db.commit()
     
     return {"message": "Image set as primary", "image_id": image_id}
@@ -222,7 +238,7 @@ def set_primary_image(
 
 # ==================== PRODUCT VARIANTS ====================
 
-@router.post("/{product_id}/variants", response_model=ProductVariantSchema)
+@router.post("/products/{product_id}/variants", response_model=ProductVariantSchema)
 def create_product_variant(
     product_id: int,
     variant_data: ProductVariantCreate,
@@ -236,7 +252,7 @@ def create_product_variant(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Create variant
@@ -258,7 +274,7 @@ def create_product_variant(
     db.add(db_variant)
     
     # Mark product as having variants
-    db.query(Product).filter(Product.id == product_id).update({Product.has_variants: True})
+    product.has_variants = True
     
     db.commit()
     db.refresh(db_variant)
@@ -266,7 +282,7 @@ def create_product_variant(
     return db_variant
 
 
-@router.get("/{product_id}/variants", response_model=List[ProductVariantSchema])
+@router.get("/products/{product_id}/variants", response_model=List[ProductVariantSchema])
 def get_product_variants(
     product_id: int,
     active_only: bool = Query(True),
@@ -286,7 +302,7 @@ def get_product_variants(
     return variants
 
 
-@router.get("/{product_id}/variants/{variant_id}", response_model=ProductVariantSchema)
+@router.get("/products/{product_id}/variants/{variant_id}", response_model=ProductVariantSchema)
 def get_product_variant(
     product_id: int,
     variant_id: int,
@@ -304,7 +320,7 @@ def get_product_variant(
     return variant
 
 
-@router.put("/{product_id}/variants/{variant_id}", response_model=ProductVariantSchema)
+@router.put("/products/{product_id}/variants/{variant_id}", response_model=ProductVariantSchema)
 def update_product_variant(
     product_id: int,
     variant_id: int,
@@ -319,7 +335,7 @@ def update_product_variant(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get variant
@@ -342,7 +358,7 @@ def update_product_variant(
     return variant
 
 
-@router.delete("/{product_id}/variants/{variant_id}")
+@router.delete("/products/{product_id}/variants/{variant_id}")
 def delete_product_variant(
     product_id: int,
     variant_id: int,
@@ -356,7 +372,7 @@ def delete_product_variant(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Verify authorization
-    if not _authorized_for_product(db, product_id, current_user):
+    if product.seller_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get and delete variant
@@ -374,110 +390,9 @@ def delete_product_variant(
     return {"message": "Variant deleted successfully"}
 
 
-# ==================== VARIANT IMAGE HANDLING ====================
-
-@router.post("/{product_id}/variants/{variant_id}/upload-image")
-def upload_variant_image(
-    product_id: int,
-    variant_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Upload an image for a product variant.
-    Creates a ProductImage and associates it with the variant.
-    Returns the image ID and URL.
-    """
-    try:
-        # Verify authorization
-        if not _authorized_for_product(db, product_id, current_user):
-            raise HTTPException(status_code=403, detail="Not authorized to edit this product")
-        
-        # Verify product exists
-        product = db.query(Product).filter(Product.id == product_id).first()
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
-        
-        # Verify variant exists and belongs to product
-        variant = db.query(ProductVariant).filter(
-            ProductVariant.id == variant_id,
-            ProductVariant.product_id == product_id
-        ).first()
-        if not variant:
-            raise HTTPException(status_code=404, detail="Variant not found")
-        
-        # Create variants upload directory
-        variant_upload_dir = "uploads/variants"
-        os.makedirs(variant_upload_dir, exist_ok=True)
-        
-        # Generate unique filename
-        file_extension = os.path.splitext(file.filename or "")[1]
-        unique_filename = f"{uuid.uuid4().hex}{file_extension}"
-        file_path = os.path.join(variant_upload_dir, unique_filename)
-        
-        # Save file to disk
-        try:
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        finally:
-            file.file.close()
-        
-        # Create ProductImage record for the variant
-        image_url = f"/uploads/variants/{unique_filename}"
-        db_image = ProductImage(
-            product_id=product_id,
-            image_url=image_url,
-            alt_text=f"Variant {variant.variant_name or variant.id}",
-            is_primary=False,
-            sort_order=0,
-        )
-        db.add(db_image)
-        db.flush()  # Flush to get the image ID
-        
-        # Add image ID to variant's images list
-        import json
-        existing_images_str = variant.images or "[]"
-        try:
-            existing_images = json.loads(existing_images_str) if isinstance(existing_images_str, str) else []
-        except Exception:
-            existing_images = []
-        
-        if not isinstance(existing_images, list):
-            existing_images = []
-        
-        # Add the new image ID
-        existing_images.append(db_image.id)
-        
-        # Update variant with new images list using setattr to avoid type checking issues
-        setattr(variant, 'images', json.dumps(existing_images))
-        db.commit()
-        db.refresh(db_image)
-        
-        # Get created_at value safely
-        created_at_value = getattr(db_image, 'created_at', None)
-        created_at_str = created_at_value.isoformat() if created_at_value is not None else None
-        
-        return {
-            "id": db_image.id,
-            "product_id": db_image.product_id,
-            "image_url": db_image.image_url,
-            "alt_text": db_image.alt_text or "",
-            "is_primary": db_image.is_primary,
-            "sort_order": db_image.sort_order,
-            "created_at": created_at_str,
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error uploading variant image: {str(e)}")
-
-
 # ==================== ENHANCED PRODUCT ENDPOINTS ====================
 
-@router.get("/{product_id}/full")
+@router.get("/products/{product_id}/full")
 def get_product_with_images_and_variants(
     product_id: int,
     db: Session = Depends(get_db),
@@ -489,18 +404,43 @@ def get_product_with_images_and_variants(
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Get images
+    # Order deterministically so the frontend receives a stable first image
     images = db.query(ProductImage).filter(
         ProductImage.product_id == product_id
-    ).order_by(ProductImage.sort_order).all()
+    ).order_by(
+        ProductImage.is_primary.desc(),
+        ProductImage.sort_order.asc(),
+        ProductImage.created_at.asc()
+    ).all()
     
     # Get variants
     variants = db.query(ProductVariant).filter(
         ProductVariant.product_id == product_id,
         ProductVariant.is_active == True
     ).all()
-    
+    # Build a clean serializable product dict (avoid SQLAlchemy internal attrs)
+    product_data = {col.name: getattr(product, col.name) for col in product.__table__.columns}
+
+    # Serialize images and variants to simple dicts
+    product_images = [
+        {
+            "id": img.id,
+            "image_url": _abs_url(str(img.image_url)),
+            "alt_text": img.alt_text,
+            "is_primary": img.is_primary,
+            "sort_order": img.sort_order,
+            "created_at": img.created_at,
+        }
+        for img in images
+    ]
+
+    variant_list = [
+        {col.name: getattr(v, col.name) for col in v.__table__.columns}
+        for v in variants
+    ]
+
     return {
-        **product.__dict__,
-        "product_images": images,
-        "variants": variants,
+        **product_data,
+        "product_images": product_images,
+        "variants": variant_list,
     }
