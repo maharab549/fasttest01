@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from sqlalchemy.sql import expression
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any, cast
 from .. import crud, schemas, auth
 from ..database import get_db
@@ -405,126 +406,148 @@ def track_product_view(slug: str, db: Session = Depends(get_db)):
     return {"message": f"View tracked for product: {slug}"}
 
 
-@router.post("/", response_model=schemas.Product)
+@router.post("/")
 async def create_product(
     request: Request,
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
     """Create a new product (seller only)"""
-    # Get seller profile
-    seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
-    if not seller:
-        raise HTTPException(status_code=400, detail="Seller profile not found")
-    
-    seller_id = db.query(models.Seller.id).filter(models.Seller.user_id == current_user.id).scalar()
-
-    # Parse payload (support JSON or multipart/form-data)
-    product_dict: Dict[str, Any]
-    content_type = request.headers.get("content-type", "")
-    if content_type.startswith("multipart/form-data"):
-        form = await request.form()
-        def _to_float(val):
-            try:
-                return float(val) if val not in (None, "", []) else None
-            except Exception:
-                return None
-        def _to_int(val):
-            try:
-                return int(val) if val not in (None, "", []) else None
-            except Exception:
-                return None
-        product_dict = {
-            "title": form.get("title"),
-            "description": form.get("description"),
-            "short_description": form.get("short_description"),
-            "price": _to_float(form.get("price")),
-            "compare_price": _to_float(form.get("compare_price")),
-            "sku": form.get("sku"),
-            "inventory_count": _to_int(form.get("inventory_count")) or 0,
-            "weight": _to_float(form.get("weight")),
-            # dimensions could be JSON string
-            "dimensions": None,
-            "images": None,
-            "category_id": _to_int(form.get("category_id")),
-            "slug": form.get("slug") or None,
-        }
-        dims = form.get("dimensions")
-        if dims:
-            try:
-                import json
-                product_dict["dimensions"] = json.loads(str(dims))
-            except Exception:
-                product_dict["dimensions"] = None
-        imgs = form.get("images")
-        if imgs:
-            try:
-                import json
-                product_dict["images"] = json.loads(str(imgs))
-            except Exception:
-                # allow comma-separated urls
-                product_dict["images"] = [s.strip() for s in str(imgs).split(",") if s.strip()]
-    else:
-        try:
-            product_dict = await request.json()
-        except Exception:
-            product_dict = {}
-
-    # Normalize alternate frontend keys
-    # Support 'name' -> 'title', 'stock' -> 'inventory_count', 'image' -> 'images'
-    if product_dict.get('title') is None and product_dict.get('name'):
-        product_dict['title'] = product_dict.get('name')
-    if product_dict.get('inventory_count') is None and product_dict.get('stock') is not None:
-        product_dict['inventory_count'] = int(product_dict.get('stock', 0))
-    if product_dict.get('images') is None and product_dict.get('image'):
-        img = product_dict.get('image')
-        product_dict['images'] = [img] if isinstance(img, str) else img
-    # Coerce numeric strings from JSON
-    for key in ('price','compare_price','weight'):
-        if key in product_dict and isinstance(product_dict[key], str):
-            try:
-                product_dict[key] = float(product_dict[key]) if product_dict[key] != '' else None
-            except Exception:
-                product_dict[key] = None
-    for key in ('inventory_count','category_id'):
-        if key in product_dict and isinstance(product_dict[key], str):
-            try:
-                product_dict[key] = int(product_dict[key]) if product_dict[key] != '' else None
-            except Exception:
-                product_dict[key] = None
-
-    # Validate against input schema
-    from pydantic import ValidationError, parse_obj_as
     try:
-        input_obj = parse_obj_as(schemas.ProductCreateInput, product_dict)
-    except ValidationError as ve:
-        raise HTTPException(status_code=422, detail=ve.errors())
+        # Get seller profile
+        seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
+        if not seller:
+            raise HTTPException(status_code=400, detail="Seller profile not found")
+        
+        seller_id = db.query(models.Seller.id).filter(models.Seller.user_id == current_user.id).scalar()
+        if seller_id is None:
+            raise HTTPException(status_code=400, detail="Seller profile not found")
 
-    # Check if product with same SKU exists
-    # Auto-generate SKU if missing
-    if not input_obj.sku:
-        input_obj.sku = f"SKU-{uuid.uuid4().hex[:8].upper()}"
-    existing_product = db.query(crud.models.Product).filter(crud.models.Product.sku == input_obj.sku).first()
-    if existing_product:
-        raise HTTPException(status_code=400, detail="Product with this SKU already exists")
-    # Normalize payload and provide defaults
-    product_dict = input_obj.dict()
-    if product_dict.get('images') is None:
-        product_dict['images'] = []
+        # Parse payload (support JSON or multipart/form-data)
+        product_dict: Dict[str, Any]
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            def _to_float(val):
+                try:
+                    return float(val) if val not in (None, "", []) else None
+                except Exception:
+                    return None
+            def _to_int(val):
+                try:
+                    return int(val) if val not in (None, "", []) else None
+                except Exception:
+                    return None
+            product_dict = {
+                "title": form.get("title"),
+                "description": form.get("description"),
+                "short_description": form.get("short_description"),
+                "price": _to_float(form.get("price")),
+                "compare_price": _to_float(form.get("compare_price")),
+                "sku": form.get("sku"),
+                "inventory_count": _to_int(form.get("inventory_count")) or 0,
+                "weight": _to_float(form.get("weight")),
+                # dimensions could be JSON string
+                "dimensions": None,
+                "images": None,
+                "category_id": _to_int(form.get("category_id")),
+                "slug": form.get("slug") or None,
+            }
+            dims = form.get("dimensions")
+            if dims:
+                try:
+                    import json
+                    product_dict["dimensions"] = json.loads(str(dims))
+                except Exception:
+                    product_dict["dimensions"] = None
+            imgs = form.get("images")
+            if imgs:
+                try:
+                    import json
+                    product_dict["images"] = json.loads(str(imgs))
+                except Exception:
+                    # allow comma-separated urls
+                    product_dict["images"] = [s.strip() for s in str(imgs).split(",") if s.strip()]
+        else:
+            try:
+                product_dict = await request.json()
+            except Exception:
+                product_dict = {}
 
-    # Ensure slug exists; if not, generate a slug from the title + short uuid suffix
-    if not product_dict.get('slug'):
-        base_slug = (product_dict.get('title') or 'product').lower().strip().replace(' ', '-')
-        product_dict['slug'] = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+        # Normalize alternate frontend keys
+        # Support 'name' -> 'title', 'stock' -> 'inventory_count', 'image' -> 'images'
+        if product_dict.get('title') is None and product_dict.get('name'):
+            product_dict['title'] = product_dict.get('name')
+        if product_dict.get('inventory_count') is None and product_dict.get('stock') is not None:
+            product_dict['inventory_count'] = int(product_dict.get('stock', 0))
+        if product_dict.get('images') is None and product_dict.get('image'):
+            img = product_dict.get('image')
+            product_dict['images'] = [img] if isinstance(img, str) else img
+        # Coerce numeric strings from JSON
+        for key in ('price','compare_price','weight'):
+            if key in product_dict and isinstance(product_dict[key], str):
+                try:
+                    product_dict[key] = float(product_dict[key]) if product_dict[key] != '' else None
+                except Exception:
+                    product_dict[key] = None
+        for key in ('inventory_count','category_id'):
+            if key in product_dict and isinstance(product_dict[key], str):
+                try:
+                    product_dict[key] = int(product_dict[key]) if product_dict[key] != '' else None
+                except Exception:
+                    product_dict[key] = None
 
-    # Validate against strict ProductCreate schema for DB write
-    product_create_obj = parse_obj_as(schemas.ProductCreate, product_dict)
+        # Validate against input schema
+        from pydantic import ValidationError, parse_obj_as
+        try:
+            input_obj = parse_obj_as(schemas.ProductCreateInput, product_dict)
+        except ValidationError as ve:
+            raise HTTPException(status_code=422, detail=ve.errors())
 
-    return crud.create_product(db=db, product=product_create_obj, seller_id=seller_id)
+        # Validate category exists and is active
+        category = db.query(models.Category).filter(
+            models.Category.id == input_obj.category_id,
+            models.Category.is_active == True
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Invalid category_id. Please select a valid category.")
+
+        # Check if product with same SKU exists
+        # Auto-generate SKU if missing
+        if not input_obj.sku:
+            input_obj.sku = f"SKU-{uuid.uuid4().hex[:8].upper()}"
+        existing_product = db.query(crud.models.Product).filter(crud.models.Product.sku == input_obj.sku).first()
+        if existing_product:
+            raise HTTPException(status_code=400, detail="Product with this SKU already exists")
+        # Normalize payload and provide defaults
+        product_dict = input_obj.dict()
+        if product_dict.get('images') is None:
+            product_dict['images'] = []
+
+        # Ensure slug exists; if not, generate a slug from the title + short uuid suffix
+        if not product_dict.get('slug'):
+            base_slug = (product_dict.get('title') or 'product').lower().strip().replace(' ', '-')
+            product_dict['slug'] = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
+        # Validate against strict ProductCreate schema for DB write
+        product_create_obj = parse_obj_as(schemas.ProductCreate, product_dict)
+        try:
+            created = crud.create_product(db=db, product=product_create_obj, seller_id=seller_id)
+        except IntegrityError as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"Unable to create product: {str(e.orig)}")
+
+        # Return stable serialized dict to avoid response-model validation crashes
+        return format_product_for_response(created, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Create product failed: {str(e)}")
 
 
-@router.put("/{product_id}", response_model=schemas.Product)
-@router.put("/{product_id}/", response_model=schemas.Product)
+@router.put("/{product_id}")
+@router.put("/{product_id}/")
 async def update_product(
     product_id: int,
     request: Request,
@@ -600,11 +623,23 @@ async def update_product(
     except ValidationError as ve:
         raise HTTPException(status_code=422, detail=ve.errors())
 
-    updated_product = crud.update_product(db=db, product_id=product_id, product_update=product_update)
+    # If category is being updated, validate it exists and is active
+    if product_update.category_id is not None:
+        category = db.query(models.Category).filter(
+            models.Category.id == product_update.category_id,
+            models.Category.is_active == True
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="Invalid category_id. Please select a valid category.")
+    try:
+        updated_product = crud.update_product(db=db, product_id=product_id, product_update=product_update)
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Unable to update product: {str(e.orig)}")
     if not updated_product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    return updated_product
+    return format_product_for_response(updated_product, db)
 
 
 @router.delete("/{product_id}")
