@@ -19,6 +19,9 @@ import uuid
 import math
 import os
 import shutil
+import json
+from collections import Counter
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -67,22 +70,52 @@ def format_product_for_response(product, db):
         "seller": product.seller,
     }
     
-    # Resolve images: support both legacy URL lists and normalized ID lists
+    # Resolve images: support URL lists, ID lists, JSON strings, and comma-separated strings.
     try:
-        if isinstance(product.images, list):
-            if all(isinstance(x, int) for x in product.images):
+        raw_images = getattr(product, "images", None)
+        parsed_images = []
+
+        if isinstance(raw_images, list):
+            parsed_images = list(raw_images)
+        elif isinstance(raw_images, str):
+            text = raw_images.strip()
+            if text:
+                try:
+                    loaded = json.loads(text)
+                    if isinstance(loaded, list):
+                        parsed_images = loaded
+                    else:
+                        parsed_images = [text]
+                except Exception:
+                    if "," in text:
+                        parsed_images = [part.strip() for part in text.split(",") if part.strip()]
+                    else:
+                        parsed_images = [text]
+
+        if parsed_images:
+            if all(isinstance(x, int) for x in parsed_images):
                 # IDs -> lookup URLs from ProductImage
-                id_list = list(product.images)
-                if len(id_list) > 0:
-                    product_images = db.query(models.ProductImage).filter(
-                        models.ProductImage.id.in_(id_list)
-                    ).all()
-                    # Preserve order of id_list when returning URLs
-                    id_to_url = {img.id: str(img.image_url) for img in product_images}
-                    product_dict["images"] = [id_to_url[i] for i in id_list if i in id_to_url]
+                id_list = list(parsed_images)
+                product_images = db.query(models.ProductImage).filter(
+                    models.ProductImage.id.in_(id_list)
+                ).all()
+                # Preserve order of id_list when returning URLs
+                id_to_url = {img.id: str(img.image_url) for img in product_images}
+                product_dict["images"] = [id_to_url[i] for i in id_list if i in id_to_url]
             else:
-                # Already URLs -> pass through
-                product_dict["images"] = [str(x) for x in list(product.images)]
+                product_dict["images"] = [str(x) for x in parsed_images if x is not None and str(x).strip()]
+
+        # Fallback to normalized image records if product.images is empty/malformed.
+        if not product_dict["images"] and getattr(product, "product_images", None):
+            sorted_images = sorted(
+                list(getattr(product, "product_images")),
+                key=lambda img: (0 if getattr(img, "is_primary", False) else 1, getattr(img, "sort_order", 0), getattr(img, "id", 0))
+            )
+            product_dict["images"] = [
+                str(getattr(img, "image_url", ""))
+                for img in sorted_images
+                if getattr(img, "image_url", None)
+            ]
     except Exception:
         product_dict["images"] = []
     
@@ -90,6 +123,146 @@ def format_product_for_response(product, db):
     product_dict["images"] = [make_absolute_media_url(u) for u in product_dict["images"]]
     product_dict["primary_image_url"] = product_dict["images"][0] if product_dict["images"] else None
     return product_dict
+
+
+@router.get("/recommended/for-you")
+def get_recommended_for_user(
+    limit: int = Query(24, ge=1, le=60),
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    """Personalized recommendations for the logged-in user."""
+    user_id = int(current_user.id)
+
+    favorite_rows = db.query(models.Favorite.product_id).filter(
+        models.Favorite.user_id == user_id
+    ).limit(80).all()
+    order_rows = db.query(models.OrderItem.product_id).join(
+        models.Order, models.OrderItem.order_id == models.Order.id
+    ).filter(
+        models.Order.user_id == user_id,
+        models.Order.status != "cancelled"
+    ).order_by(models.Order.created_at.desc()).limit(120).all()
+    cart_rows = db.query(models.CartItem.product_id).filter(
+        models.CartItem.user_id == user_id
+    ).limit(60).all()
+
+    interaction_weights: Counter[int] = Counter()
+    for row in favorite_rows:
+        if row[0] is not None:
+            interaction_weights[int(row[0])] += 3
+    for row in order_rows:
+        if row[0] is not None:
+            interaction_weights[int(row[0])] += 2
+    for row in cart_rows:
+        if row[0] is not None:
+            interaction_weights[int(row[0])] += 2
+
+    interacted_ids = [pid for pid in interaction_weights.keys() if pid > 0]
+
+    category_pref: Counter[int] = Counter()
+    seller_pref: Counter[int] = Counter()
+    weighted_prices: list[tuple[float, int]] = []
+
+    if interacted_ids:
+        interacted_products = db.query(models.Product).filter(
+            models.Product.id.in_(interacted_ids)
+        ).all()
+        for product in interacted_products:
+            weight = int(interaction_weights.get(int(product.id), 0))
+            if weight <= 0:
+                continue
+            category_pref[int(product.category_id)] += weight
+            seller_pref[int(product.seller_id)] += weight
+            weighted_prices.append((float(product.price or 0), weight))
+
+    preferred_price = None
+    if weighted_prices:
+        total_weight = sum(weight for _, weight in weighted_prices)
+        if total_weight > 0:
+            preferred_price = sum(price * weight for price, weight in weighted_prices) / total_weight
+
+    query = db.query(models.Product).filter(
+        models.Product.is_active == True,
+        models.Product.approval_status == "approved",
+        models.Product.inventory_count > 0
+    )
+    if interacted_ids:
+        query = query.filter(~models.Product.id.in_(interacted_ids))
+
+    candidates = query.order_by(models.Product.created_at.desc()).limit(500).all()
+    if not candidates:
+        return []
+
+    max_cat = max(category_pref.values()) if category_pref else 0
+    max_seller = max(seller_pref.values()) if seller_pref else 0
+
+    def clamp01(value: float) -> float:
+        if value < 0:
+            return 0.0
+        if value > 1:
+            return 1.0
+        return value
+
+    def days_since(created_at_value: Any) -> float:
+        try:
+            if created_at_value is None:
+                return 9999.0
+            created_dt = created_at_value
+            if isinstance(created_dt, str):
+                created_dt = datetime.fromisoformat(created_dt.replace("Z", "+00:00"))
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return max(0.0, (now - created_dt).total_seconds() / 86400.0)
+        except Exception:
+            return 9999.0
+
+    scored = []
+    has_preferences = bool(category_pref or seller_pref or preferred_price is not None)
+
+    for product in candidates:
+        rating_score = clamp01(float(product.rating or 0) / 5.0)
+        review_score = clamp01(math.log1p(max(0, int(product.review_count or 0))) / math.log(201.0))
+        freshness_score = clamp01(math.exp(-days_since(getattr(product, "created_at", None)) / 120.0))
+        popularity = (0.65 * rating_score) + (0.35 * review_score)
+
+        if has_preferences:
+            category_score = clamp01((category_pref.get(int(product.category_id), 0) / max_cat) if max_cat > 0 else 0.0)
+            seller_score = clamp01((seller_pref.get(int(product.seller_id), 0) / max_seller) if max_seller > 0 else 0.0)
+            if preferred_price is None or preferred_price <= 0:
+                price_score = 0.5
+            else:
+                price_diff = abs(float(product.price or 0) - float(preferred_price))
+                price_score = clamp01(1.0 - (price_diff / max(float(preferred_price), 1.0)))
+
+            score = (
+                0.38 * category_score
+                + 0.24 * seller_score
+                + 0.18 * price_score
+                + 0.16 * popularity
+                + 0.04 * freshness_score
+                + (0.05 if bool(getattr(product, "is_featured", False)) else 0.0)
+            )
+        else:
+            # Cold-start fallback with deterministic per-user rotation so two users do not see identical order.
+            score = (
+                0.66 * popularity
+                + 0.24 * freshness_score
+                + (0.10 if bool(getattr(product, "is_featured", False)) else 0.0)
+            )
+
+        scored.append((score, product))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    ranked_products = [product for _, product in scored]
+
+    if not has_preferences and len(ranked_products) > 1:
+        shift = user_id % len(ranked_products)
+        ranked_products = ranked_products[shift:] + ranked_products[:shift]
+
+    selected = ranked_products[:limit]
+    return [format_product_for_response(product, db) for product in selected]
 
 
 @router.get("/")
