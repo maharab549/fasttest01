@@ -1,14 +1,177 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
-from typing import List
+from sqlalchemy import func, or_
+from typing import Any, List
 from .. import crud, schemas, auth
 from ..database import get_db
 from ..media_paths import make_absolute_media_url
 from typing import cast
 from datetime import datetime
+import json
 
 router = APIRouter(prefix="/seller", tags=["seller"])
+
+
+def _seller_product_filter(current_user_id: int, seller_id: int):
+    """Support both normalized and legacy product ownership mapping.
+
+    Normalized data uses products.seller_id == sellers.id.
+    Some legacy datasets used products.seller_id == users.id.
+    """
+    return or_(
+        crud.models.Product.seller_id == seller_id,
+        crud.models.Product.seller_id == current_user_id
+    )
+
+
+def _serialize_dt(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return value.isoformat()
+    except Exception:
+        return str(value)
+
+
+def _normalize_address(value: Any) -> Any:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        return {"address": text}
+    return {"address": str(value)}
+
+
+def _extract_product_image_urls(product: Any, db: Session) -> list[str]:
+    image_urls: list[str] = []
+    images = getattr(product, "images", None)
+
+    parsed_images: list[Any] = []
+    if isinstance(images, list):
+        parsed_images = images
+    elif isinstance(images, str) and images.strip():
+        try:
+            parsed = json.loads(images)
+            if isinstance(parsed, list):
+                parsed_images = parsed
+            else:
+                parsed_images = [images]
+        except Exception:
+            parsed_images = [images]
+
+    if not parsed_images:
+        return image_urls
+
+    if all(isinstance(x, int) for x in parsed_images):
+        image_ids = cast(list[int], parsed_images)
+        product_images = db.query(crud.models.ProductImage).filter(
+            crud.models.ProductImage.id.in_(image_ids)
+        ).all()
+        id_to_url = {
+            int(img.id): make_absolute_media_url(getattr(img, "image_url", ""))
+            for img in product_images
+        }
+        return [id_to_url[i] for i in image_ids if i in id_to_url]
+
+    for entry in parsed_images:
+        if entry is None:
+            continue
+        url = make_absolute_media_url(str(entry))
+        if url:
+            image_urls.append(url)
+    return image_urls
+
+
+def _serialize_product_for_order(product: Any, db: Session) -> dict[str, Any]:
+    image_urls = _extract_product_image_urls(product, db)
+    return {
+        "id": getattr(product, "id", 0),
+        "seller_id": getattr(product, "seller_id", 0),
+        "category_id": getattr(product, "category_id", 0),
+        "title": getattr(product, "title", ""),
+        "slug": getattr(product, "slug", ""),
+        "description": getattr(product, "description", ""),
+        "short_description": getattr(product, "short_description", ""),
+        "price": float(getattr(product, "price", 0) or 0),
+        "compare_price": (
+            float(getattr(product, "compare_price", 0))
+            if getattr(product, "compare_price", None) is not None
+            else None
+        ),
+        "sku": getattr(product, "sku", ""),
+        "inventory_count": int(getattr(product, "inventory_count", 0) or 0),
+        "images": image_urls,
+        "primary_image_url": image_urls[0] if image_urls else None,
+        "is_active": bool(getattr(product, "is_active", False)),
+        "is_featured": bool(getattr(product, "is_featured", False)),
+        "rating": float(getattr(product, "rating", 0) or 0),
+        "review_count": int(getattr(product, "review_count", 0) or 0),
+        "created_at": _serialize_dt(getattr(product, "created_at", None)),
+        "updated_at": _serialize_dt(getattr(product, "updated_at", None)),
+    }
+
+
+def _serialize_order_for_seller(order: Any, seller_ids: set[int], db: Session) -> dict[str, Any] | None:
+    serialized_items: list[dict[str, Any]] = []
+
+    for item in getattr(order, "order_items", []) or []:
+        product = getattr(item, "product", None)
+        if not product:
+            continue
+
+        product_seller_id = getattr(product, "seller_id", None)
+        if product_seller_id not in seller_ids:
+            continue
+
+        product_payload = _serialize_product_for_order(product, db)
+
+        product_id = getattr(item, "product_id", None)
+        if product_id is None:
+            product_id = product_payload.get("id", 0)
+
+        snapshot_image = getattr(item, "product_image", None)
+        if isinstance(snapshot_image, str) and snapshot_image.strip():
+            item_image = make_absolute_media_url(snapshot_image)
+        else:
+            item_image = product_payload.get("primary_image_url")
+
+        serialized_items.append({
+            "id": getattr(item, "id", 0),
+            "product_id": int(product_id or 0),
+            "product_name": getattr(item, "product_name", None) or product_payload.get("title", ""),
+            "product_image": item_image,
+            "quantity": int(getattr(item, "quantity", 0) or 0),
+            "unit_price": float(getattr(item, "unit_price", 0) or 0),
+            "total_price": float(getattr(item, "total_price", 0) or 0),
+            "product": product_payload,
+        })
+
+    if not serialized_items:
+        return None
+
+    return {
+        "id": getattr(order, "id", 0),
+        "user_id": getattr(order, "user_id", 0),
+        "status": getattr(order, "status", "pending") or "pending",
+        "total_amount": float(getattr(order, "total_amount", 0) or 0),
+        "shipping_address": _normalize_address(getattr(order, "shipping_address", None)),
+        "billing_address": _normalize_address(getattr(order, "billing_address", None)),
+        "payment_method": getattr(order, "payment_method", None),
+        "payment_status": getattr(order, "payment_status", None),
+        "created_at": _serialize_dt(getattr(order, "created_at", None)),
+        "updated_at": _serialize_dt(getattr(order, "updated_at", None)),
+        "order_items": serialized_items,
+    }
 
 
 @router.get("/profile", response_model=schemas.Seller)
@@ -26,14 +189,13 @@ def get_seller_profile(
 @router.get("/products", response_model=List[schemas.Product])
 def get_seller_products(
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1),
     search: str = Query(None, description="Search by product name or category"),
     status: str = Query(None, description="Filter by status: active, inactive, or out_of_stock"),
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
     """Get current seller's products with optional search and filters"""
-    from sqlalchemy import or_
     from ..models import Product, Category
     
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
@@ -43,7 +205,8 @@ def get_seller_products(
     seller_id = cast(int, seller.id)
     
     # Build query
-    query = db.query(Product).filter(Product.seller_id == seller_id)
+    seller_filter = _seller_product_filter(current_user.id, seller_id)
+    query = db.query(Product).filter(seller_filter)
     
     # Apply search filter
     if search:
@@ -122,11 +285,11 @@ def get_seller_products(
     return result
 
 
-@router.get("/orders", response_model=List[schemas.Order])
-@router.get("/orders/", response_model=List[schemas.Order])
+@router.get("/orders")
+@router.get("/orders/")
 def get_seller_orders(
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1),
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller)
 ):
@@ -134,22 +297,41 @@ def get_seller_orders(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
-    
-    # Get orders that contain products from this seller
-    orders = db.query(crud.models.Order).join(
+    seller_id = cast(int, seller.id)
+    seller_filter = _seller_product_filter(current_user.id, seller_id)
+    seller_ids = {seller_id, current_user.id}
+
+    # Step 1: Get distinct order IDs (avoids joinedload + distinct conflict)
+    order_ids_rows = db.query(crud.models.Order.id).join(
         crud.models.OrderItem
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
+    ).distinct().order_by(crud.models.Order.id.desc()).offset(skip).limit(limit).all()
+
+    order_ids = [r[0] for r in order_ids_rows]
+    if not order_ids:
+        return []
+
+    # Step 2: Load full order data with relationships
+    orders = db.query(crud.models.Order).filter(
+        crud.models.Order.id.in_(order_ids)
     ).options(
         joinedload(crud.models.Order.order_items).joinedload(crud.models.OrderItem.product),
         joinedload(crud.models.Order.user)
-    ).order_by(crud.models.Order.created_at.desc()).distinct().offset(skip).limit(limit).all()
-    return orders
+    ).order_by(crud.models.Order.created_at.desc()).all()
+
+    serialized_orders: list[dict[str, Any]] = []
+    for order in orders:
+        payload = _serialize_order_for_seller(order, seller_ids, db)
+        if payload is not None:
+            serialized_orders.append(payload)
+
+    return serialized_orders
 
 
-@router.get("/orders/{order_id}", response_model=schemas.Order)
+@router.get("/orders/{order_id}")
 def get_seller_order_detail(
     order_id: int,
     db: Session = Depends(get_db),
@@ -159,6 +341,8 @@ def get_seller_order_detail(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
+    seller_id = cast(int, seller.id)
+    seller_filter = _seller_product_filter(current_user.id, seller_id)
 
     order = db.query(crud.models.Order).join(
         crud.models.OrderItem
@@ -166,7 +350,7 @@ def get_seller_order_detail(
         crud.models.Product
     ).filter(
         crud.models.Order.id == order_id,
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).options(
         joinedload(crud.models.Order.order_items).joinedload(crud.models.OrderItem.product),
         joinedload(crud.models.Order.user)
@@ -175,10 +359,14 @@ def get_seller_order_detail(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found for this seller")
 
-    return order
+    payload = _serialize_order_for_seller(order, {seller_id, current_user.id}, db)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Order not found for this seller")
+    return payload
 
 
 @router.get("/dashboard")
+@router.get("/dashboard/")
 def get_seller_dashboard(
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_seller),
@@ -188,14 +376,15 @@ def get_seller_dashboard(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
+    seller_filter = _seller_product_filter(current_user.id, seller.id)
     
     # Get statistics
     total_products = db.query(crud.models.Product).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).count()
     
     active_products = db.query(crud.models.Product).filter(
-        crud.models.Product.seller_id == seller.id,
+        seller_filter,
         crud.models.Product.is_active == True
     ).count()
     
@@ -205,7 +394,7 @@ def get_seller_dashboard(
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).distinct().count()
 
     # Pending orders count
@@ -214,7 +403,7 @@ def get_seller_dashboard(
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id,
+        seller_filter,
         crud.models.Order.status == "pending"
     ).distinct().count()
     
@@ -225,7 +414,7 @@ def get_seller_dashboard(
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).scalar() or 0
     
     # New orders since 'since' timestamp (if provided)
@@ -239,7 +428,7 @@ def get_seller_dashboard(
             ).join(
                 crud.models.Product
             ).filter(
-                crud.models.Product.seller_id == seller.id,
+                seller_filter,
                 crud.models.Order.created_at >= since_dt
             ).distinct().count()
         except Exception:
@@ -284,6 +473,7 @@ def get_seller_analytics(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
+    seller_filter = _seller_product_filter(current_user.id, seller.id)
     
     # Get top selling products
     top_products = db.query(
@@ -293,7 +483,7 @@ def get_seller_analytics(
     ).join(
         crud.models.OrderItem
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).group_by(
         crud.models.Product.id, crud.models.Product.title
     ).order_by(
@@ -306,7 +496,7 @@ def get_seller_analytics(
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).distinct().order_by(
         crud.models.Order.created_at.desc()
     ).limit(10).all()
@@ -342,11 +532,18 @@ def request_withdrawal(
     seller = crud.get_seller_by_user_id(db=db, user_id=current_user.id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller profile not found")
+    seller_filter = _seller_product_filter(current_user.id, seller.id)
     
     seller_id = getattr(seller, "id", 0)
     
     # Ensure payout info exists
-    if not (seller.payout_method and (seller.payout_method == "paypal" and seller.paypal_email or seller.payout_method == "bank_transfer" and seller.bank_account_number)):
+    mobile_methods = ("bkash", "nagad", "rocket", "upay")
+    payout_ok = seller.payout_method and (
+        (seller.payout_method == "paypal" and seller.paypal_email) or
+        (seller.payout_method == "bank_transfer" and seller.bank_account_number) or
+        (seller.payout_method in mobile_methods and seller.bank_account_number)
+    )
+    if not payout_ok:
         raise HTTPException(status_code=400, detail="Please add payout/bank information before requesting a withdrawal")
 
     # Calculate available balance: 90% of total revenue after 10% commission
@@ -355,7 +552,7 @@ def request_withdrawal(
     ).join(
         crud.models.Product
     ).filter(
-        crud.models.Product.seller_id == seller.id
+        seller_filter
     ).scalar() or 0
     
     available_balance = total_revenue * 0.90
@@ -424,7 +621,9 @@ def update_payout_info_put(
     method_type = payout.get("method_type", "bank_transfer")
     
     # Validate method type
-    if method_type not in ("bank_transfer", "paypal", "stripe"):
+    mobile_methods = ("bkash", "nagad", "rocket", "upay")
+    all_methods = ("bank_transfer", "paypal", "stripe") + mobile_methods
+    if method_type not in all_methods:
         raise HTTPException(status_code=400, detail="Invalid payment method type")
     
     # Set payout method
@@ -432,12 +631,20 @@ def update_payout_info_put(
     
     if method_type == "bank_transfer":
         # Validate required fields
-        if not all([payout.get("bank_account"), payout.get("bank_code"), payout.get("account_holder_name")]):
-            raise HTTPException(status_code=400, detail="Bank transfer requires bank_account, bank_code, and account_holder_name")
+        if not all([payout.get("bank_account"), payout.get("account_holder_name")]):
+            raise HTTPException(status_code=400, detail="Bank transfer requires bank_account and account_holder_name")
         
         setattr(seller, "bank_account_number", payout.get("bank_account"))
-        setattr(seller, "bank_routing_number", payout.get("bank_code"))
+        setattr(seller, "bank_routing_number", payout.get("bank_code", ""))
         setattr(seller, "bank_account_name", payout.get("account_holder_name"))
+        setattr(seller, "bank_name", payout.get("bank_name", ""))
+
+    elif method_type in mobile_methods:
+        # Mobile banking methods: store number in bank_account_number field
+        if not payout.get("mobile_number"):
+            raise HTTPException(status_code=400, detail=f"{method_type} requires mobile_number")
+        setattr(seller, "bank_account_number", payout.get("mobile_number"))
+        setattr(seller, "bank_account_name", payout.get("account_holder_name", ""))
         
     elif method_type in ("paypal", "stripe"):
         if not payout.get("email"):

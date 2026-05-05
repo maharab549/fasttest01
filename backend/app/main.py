@@ -12,7 +12,8 @@ from .media_paths import resolve_media_file
 from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants, product_variants
+    sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants, product_variants,
+    banners
 )
 from .ws_redis import bridge
 from .security_middleware import (
@@ -126,7 +127,8 @@ def serve_uploads(file_path: str):
 routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
-    sms, reviews, chatbot, returns, loyalty, health, variants, product_variants
+    sms, reviews, chatbot, returns, loyalty, health, variants, product_variants,
+    banners
 ]
 
 for router in routers:

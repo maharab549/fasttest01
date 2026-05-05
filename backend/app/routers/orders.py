@@ -216,7 +216,7 @@ def update_order_status(
     
     # Verify seller has products in this order
     seller_has_products = any(
-        item.product.seller_id == seller.id 
+        item.product.seller_id == seller.id or item.product.seller_id == current_user.id
         for item in order.order_items 
         if item.product
     )
@@ -419,4 +419,3 @@ def edit_order(
         related_order_id=int(getattr(order, "id", 0))
     )
     return order
-

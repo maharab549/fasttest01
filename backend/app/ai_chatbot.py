@@ -17,6 +17,22 @@ import re
 # In a production environment, this would be a Redis or database store.
 CHAT_SESSIONS: Dict[str, Any] = {}
 
+MEGAMART_SCOPE_KEYWORDS = {
+    "megamart", "marketplace", "product", "products", "category", "categories", "catalog",
+    "search", "cart", "checkout", "order", "orders", "track", "tracking", "delivery",
+    "shipping", "return", "returns", "refund", "exchange", "cancel", "payment", "payments",
+    "promo", "coupon", "discount", "deal", "deals", "flash sale", "new arrivals", "top rated",
+    "wishlist", "favorite", "favorites", "review", "reviews", "rating", "profile", "account",
+    "address", "address book", "notification", "notifications", "message", "messages",
+    "support", "help", "faq", "seller", "admin", "dashboard", "rewards", "loyalty",
+    "sms", "chatbot", "ai assistant", "contact", "privacy", "terms", "policy"
+}
+
+OFF_TOPIC_RESPONSE = (
+    "I can only help with MegaMart website and app topics. "
+    "Please ask about products, orders, delivery, payments, returns, account, seller/admin features, or support pages."
+)
+
 # Initialize providers (API keys loaded from settings)
 GEMINI_API_KEY = settings.gemini_api_key
 GROQ_API_KEY = settings.groq_api_key
@@ -50,12 +66,57 @@ if GROQ_API_KEY and Groq is not None:
         USE_GROQ = False
 
 
+def is_megamart_related_query(user_query: str) -> bool:
+    text = (user_query or "").strip().lower()
+    if not text:
+        return True
+
+    # Allow simple greetings so users can start naturally.
+    if re.search(r"\b(hi|hello|hey|greetings|good morning|good afternoon|good evening)\b", text):
+        return True
+
+    if "megamart" in text or "mega mart" in text:
+        return True
+
+    for kw in MEGAMART_SCOPE_KEYWORDS:
+        if kw in text:
+            return True
+
+    return False
+
+
+def build_megamart_system_instruction() -> str:
+    return (
+        "You are MegaMart Assistant, the official support chatbot for the MegaMart website and APK only. "
+        "Your scope is strictly limited to MegaMart platform topics.\n\n"
+        "MegaMart platform knowledge:\n"
+        "- Customer features: home feed, search, categories, product details, cart, checkout, orders, order tracking, returns, rewards/loyalty, favorites, notifications, messages, and profile/account settings.\n"
+        "- Deals surfaces: All Deals, Flash Sale (countdown), New Arrivals, and Top Rated.\n"
+        "- Support and info pages: Help/FAQ, Contact Us, Privacy Policy, Terms & Conditions.\n"
+        "- Payments: card checkout and integrated payment flows available in app/backend.\n"
+        "- Multi-role platform: customer, seller dashboard/tools, and admin dashboard/tools.\n\n"
+        "Behavior rules:\n"
+        "1) Answer only MegaMart-related questions.\n"
+        "2) If a question is unrelated to MegaMart, politely refuse and redirect to MegaMart topics.\n"
+        "3) Do not invent unavailable data. If account-specific data is requested, guide the user to the relevant app page or ask for needed order/product identifiers.\n"
+        "4) Keep responses concise, practical, and support-focused.\n"
+        "5) Maintain a professional, friendly customer-support tone."
+    )
+
+
+def get_off_topic_response() -> str:
+    return OFF_TOPIC_RESPONSE
+
+
 def get_fallback_response(user_query: str) -> str:
     """Provides a simple rule-based fallback response when Gemini is unavailable.
 
     This version also appends a small set of follow-up suggestions (intent-aware)
     to help guide the user to common next steps.
     """
+    if not is_megamart_related_query(user_query):
+        return get_off_topic_response()
+
     query_lower = user_query.lower()
 
     intent = "default"
@@ -65,23 +126,23 @@ def get_fallback_response(user_query: str) -> str:
     if re.search(r'\b(hi|hello|hey|greetings)\b', query_lower):
         intent = "greeting"
         resp = (
-            "Hello! Welcome to our premium marketplace. How may I assist you today? "
-            "You can ask me about products, orders, shipping, or any other shopping-related questions."
+            "Hello! Welcome to MegaMart. How can I help you today? "
+            "You can ask about products, orders, shipping, returns, payments, or account settings."
         )
 
     # Product inquiry patterns
     elif re.search(r'\b(product|item|buy|purchase|shop|looking for)\b', query_lower):
         intent = "product"
         resp = (
-            "I'd be happy to help you find products! You can browse our categories, use the search bar, "
-            "or filter products by price, rating, and more. What type of product are you interested in?"
+            "I can help you find products on MegaMart. You can browse categories, use search, "
+            "or filter by price, rating, and deals. What product are you looking for?"
         )
 
     # Order/shipping patterns
     elif re.search(r'\b(order|shipping|delivery|track|status)\b', query_lower):
         intent = "order"
         resp = (
-            "For order-related inquiries, please visit your Orders page where you can track your shipments and view order details. "
+            "For order inquiries, please open your Orders page in MegaMart where you can track shipment and view order details. "
             "If you need specific help, please provide your order number."
         )
 
@@ -89,7 +150,7 @@ def get_fallback_response(user_query: str) -> str:
     elif re.search(r'\b(payment|pay|card|checkout|stripe)\b', query_lower):
         intent = "payment"
         resp = (
-            "We accept secure payments through Stripe, supporting all major credit cards. Your payment information is encrypted and safe. "
+            "MegaMart supports secure in-app payment methods. Your payment information is encrypted and safe. "
             "Is there anything specific about the payment process you'd like to know?"
         )
 
@@ -97,7 +158,7 @@ def get_fallback_response(user_query: str) -> str:
     elif re.search(r'\b(return|refund|exchange|cancel)\b', query_lower):
         intent = "return"
         resp = (
-            "Our return policy allows you to return items within 30 days of delivery. Please visit your Orders page to initiate a return. "
+            "Please use your Orders page in MegaMart to start a return or refund request. "
             "For specific questions, feel free to contact our customer support."
         )
 
@@ -105,7 +166,7 @@ def get_fallback_response(user_query: str) -> str:
     elif re.search(r'\b(account|profile|login|register|sign)\b', query_lower):
         intent = "account"
         resp = (
-            "You can manage your account from the Account page. There you can update your profile, view order history, manage addresses, "
+            "You can manage your account from the Account/Profile area. There you can update your profile, view order history, manage addresses, "
             "and adjust preferences. Need help with something specific?"
         )
 
@@ -113,7 +174,7 @@ def get_fallback_response(user_query: str) -> str:
     elif re.search(r'\b(help|support|assist|question|problem|issue)\b', query_lower):
         intent = "support"
         resp = (
-            "I'm here to help! I can assist with product searches, order tracking, account management, and general shopping questions. "
+            "I'm here to help with MegaMart topics. I can assist with product search, order tracking, account management, and support pages. "
             "What would you like help with?"
         )
 
@@ -126,7 +187,7 @@ def get_fallback_response(user_query: str) -> str:
     if resp is None:
         intent = "default"
         resp = (
-            "Thank you for your message. I'm here to assist with product inquiries, order tracking, account management, and shopping questions. "
+            "Thanks for your message. I can assist with MegaMart product inquiries, orders, returns, payments, account settings, and support pages. "
             "How can I help you today?"
         )
 
@@ -200,14 +261,12 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
     Returns:
         The chatbot's response.
     """
+    # Hard scope guard: chatbot is website/app-domain only.
+    if not is_megamart_related_query(user_query):
+        return get_off_topic_response()
+
     # Provider selection: SDK-first (try multiple SDK call shapes) -> REST Gemini -> Groq -> Fallback
-    system_instruction = (
-        "You are a sophisticated, helpful, and knowledgeable customer support assistant for a premium, luxury e-commerce marketplace. "
-        "Your tone is polite, professional, and elegant. "
-        "Your primary goal is to assist with product inquiries, order status, and general site navigation in a concise manner. "
-        "Always maintain the luxury brand voice. "
-        "If you are asked a question outside the scope of e-commerce or customer support, politely decline and redirect the user to a relevant shopping topic."
-    )
+    system_instruction = build_megamart_system_instruction()
 
     # 1) Try SDK if available (be tolerant of different SDK shapes/versions)
     if genai is not None and GEMINI_API_KEY:
@@ -281,13 +340,7 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
     if USE_GEMINI_REST and GEMINI_API_KEY:
         try:
             # Build a simple prompt that includes a system instruction and recent conversation
-            system_instruction = (
-                "You are a sophisticated, helpful, and knowledgeable customer support assistant for a premium, luxury e-commerce marketplace. "
-                "Your tone is polite, professional, and elegant. "
-                "Your primary goal is to assist with product inquiries, order status, and general site navigation in a concise manner. "
-                "Always maintain the luxury brand voice. "
-                "If you are asked a question outside the scope of e-commerce or customer support, politely decline and redirect the user to a relevant shopping topic."
-            )
+            system_instruction = build_megamart_system_instruction()
 
             # Maintain rolling history per session (system + last N messages)
             history_msgs = CHAT_SESSIONS.get(session_id, {}).get("messages", [])
@@ -350,11 +403,7 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
             # Prepare a small rolling chat history for better context
             system_message = {
                 "role": "system",
-                "content": (
-                    "You are a refined, concise assistant for a premium e-commerce marketplace. "
-                    "Help users with product discovery, order status, returns, and payments. "
-                    "Maintain a polite, premium brand tone."
-                )
+                "content": build_megamart_system_instruction()
             }
 
             if session_id not in CHAT_SESSIONS or CHAT_SESSIONS[session_id].get("provider") != "groq":
@@ -391,5 +440,4 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
 
     # Final fallback
     return get_fallback_response(user_query)
-
 
