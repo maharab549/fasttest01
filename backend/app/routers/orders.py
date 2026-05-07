@@ -42,6 +42,60 @@ def validate_order_items(order: schemas.OrderCreate, db: Session):
         raise HTTPException(status_code=400, detail="Order validation failed: " + "; ".join(errors))
 
 
+def ensure_review_request_notifications(db: Session, user_id: int, orders: List[models.Order]):
+    """Best-effort backfill for missing review_request notifications on delivered orders."""
+    delivered_orders = [
+        order for order in orders
+        if order is not None and str(getattr(order, "status", "")).lower() == "delivered"
+    ]
+    if not delivered_orders:
+        return
+
+    for order in delivered_orders:
+        order_id = int(getattr(order, "id", 0) or 0)
+        if order_id <= 0:
+            continue
+
+        existing_notice = db.query(models.Notification.id).filter(
+            models.Notification.user_id == user_id,
+            models.Notification.type == "review_request",
+            models.Notification.related_order_id == order_id
+        ).first()
+        if existing_notice:
+            continue
+
+        has_unreviewed_item = False
+        for item in getattr(order, "order_items", []) or []:
+            product_id = int(getattr(item, "product_id", 0) or 0)
+            if product_id <= 0:
+                continue
+            existing_review = db.query(models.Review.id).filter(
+                models.Review.user_id == user_id,
+                models.Review.product_id == product_id
+            ).first()
+            if not existing_review:
+                has_unreviewed_item = True
+                break
+
+        if not has_unreviewed_item:
+            continue
+
+        try:
+            create_notification(
+                db=db,
+                user_id=user_id,
+                title=f"Order #{getattr(order, 'order_number', order_id)} Delivered",
+                message=(
+                    "Your order was delivered. Please leave a review for the products you received."
+                ),
+                notification_type="review_request",
+                related_order_id=order_id
+            )
+        except Exception:
+            # Do not block order retrieval for notification backfill failures.
+            pass
+
+
 @router.post("/", response_model=schemas.Order)
 def create_order(
     order: schemas.OrderCreate,
@@ -171,6 +225,7 @@ def get_user_orders(
     """Get current user's orders"""
     print(f"[orders.py] 🔍 get_user_orders called: user_id={current_user.id}, skip={skip}, limit={limit}")
     orders = crud.get_orders_by_user(db=db, user_id=current_user.id, skip=skip, limit=limit)
+    ensure_review_request_notifications(db, int(current_user.id), orders)
     print(f"[orders.py] 📦 Found {len(orders)} orders for user {current_user.id}")
     for i, o in enumerate(orders):
         print(f"[orders.py]   Order {i}: id={o.id}, order_number={o.order_number}, status={o.status}, user_id={o.user_id}")

@@ -226,6 +226,8 @@ def get_recommended_for_user(
         review_score = clamp01(math.log1p(max(0, int(product.review_count or 0))) / math.log(201.0))
         freshness_score = clamp01(math.exp(-days_since(getattr(product, "created_at", None)) / 120.0))
         popularity = (0.65 * rating_score) + (0.35 * review_score)
+        user_seed = abs((user_id * 1315423911) ^ (int(product.id) * 2654435761))
+        personalization_jitter = (user_seed % 1000) / 1000.0
 
         if has_preferences:
             category_score = clamp01((category_pref.get(int(product.category_id), 0) / max_cat) if max_cat > 0 else 0.0)
@@ -243,6 +245,7 @@ def get_recommended_for_user(
                 + 0.16 * popularity
                 + 0.04 * freshness_score
                 + (0.05 if bool(getattr(product, "is_featured", False)) else 0.0)
+                + (0.03 * personalization_jitter)
             )
         else:
             # Cold-start fallback with deterministic per-user rotation so two users do not see identical order.
@@ -250,6 +253,7 @@ def get_recommended_for_user(
                 0.66 * popularity
                 + 0.24 * freshness_score
                 + (0.10 if bool(getattr(product, "is_featured", False)) else 0.0)
+                + (0.03 * personalization_jitter)
             )
 
         scored.append((score, product))
