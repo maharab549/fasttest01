@@ -13,6 +13,7 @@ from .routers import (
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
     sms, reviews, ws_messages, chatbot, returns, loyalty, health, variants, product_variants,
+    tryon,
     banners
 )
 from .ws_redis import bridge
@@ -128,6 +129,7 @@ routers = [
     auth, products, cart, orders, categories, seller, admin,
     payments, messages, notifications, user_stats, favorites,
     sms, reviews, chatbot, returns, loyalty, health, variants, product_variants,
+    tryon,
     banners
 ]
 

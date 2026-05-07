@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request, Form
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.sql import expression
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any, cast
@@ -9,6 +9,14 @@ from ..database import get_db
 from ..config import settings
 from ..media_paths import make_absolute_media_url
 from app import models
+from io import BytesIO
+from difflib import SequenceMatcher
+import re
+from PIL import Image as PILImage
+try:
+    import google.generativeai as genai
+except Exception:
+    genai = None
 
 # Whether to run AI-powered semantic search. Read from settings if available,
 # otherwise default to False to avoid NameError when the setting is not present.
@@ -30,6 +38,152 @@ router = APIRouter(prefix="/products", tags=["products"])
 # utility moved/removed. If you need to re-enable image-based search, reintroduce a
 # purpose-built, tested module. For now, keep product endpoints focused on text-based
 # search and recommendations.
+
+VISUAL_STOP_WORDS = {
+    "the", "and", "with", "from", "into", "onto", "over", "under", "this", "that", "these", "those",
+    "screenshot", "image", "photo", "picture", "product", "item", "look", "looks", "style", "please",
+    "find", "show", "match", "similar", "same", "for", "in", "on", "of", "to", "a", "an", "is", "it"
+}
+
+
+def _normalize_visual_tokens(text: str) -> List[str]:
+    cleaned = re.sub(r"[^a-zA-Z0-9\s\-]", " ", (text or "").lower())
+    tokens = []
+    for token in cleaned.split():
+        token = token.strip("- ").strip()
+        if len(token) < 2 or token in VISUAL_STOP_WORDS:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _dedupe_tokens(tokens: List[str], limit: int = 14) -> List[str]:
+    seen = set()
+    out = []
+    for token in tokens:
+        if token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _extract_json_block(text: str) -> Dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        return {}
+    if "```" in raw:
+        raw = raw.replace("```json", "").replace("```", "").strip()
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        payload = json.loads(match.group(0))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _extract_visual_terms_with_gemini(image_bytes: bytes, hint: str, mime_type: str) -> tuple[list[str], str]:
+    api_key = (getattr(settings, "gemini_api_key", "") or "").strip()
+    if not api_key or api_key.startswith("default-") or genai is None:
+        return [], ""
+
+    try:
+        if hasattr(genai, "configure"):
+            genai.configure(api_key=api_key)
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        image = PILImage.open(BytesIO(image_bytes)).convert("RGB")
+
+        prompt = (
+            "You are an ecommerce visual search parser.\n"
+            "Analyze the screenshot and infer the main shoppable product.\n"
+            "Return ONLY JSON with this exact schema:\n"
+            "{"
+            "\"item_name\":\"...\","
+            "\"category\":\"...\","
+            "\"attributes\":[\"...\"],"
+            "\"keywords\":[\"...\"]"
+            "}\n"
+            "Rules:\n"
+            "- Keep keywords short, lowercase, and practical for ecommerce search.\n"
+            "- Include color/material/style cues when visible.\n"
+            "- Do not include markdown, explanation, or extra text.\n"
+            f"- User hint: {hint or 'none'}"
+        )
+
+        response = model.generate_content([prompt, image])
+        text = (getattr(response, "text", None) or "").strip()
+        if not text:
+            return [], ""
+
+        parsed = _extract_json_block(text)
+        tokens: list[str] = []
+        query_parts: list[str] = []
+
+        item_name = parsed.get("item_name")
+        if isinstance(item_name, str) and item_name.strip():
+            query_parts.append(item_name.strip())
+            tokens.extend(_normalize_visual_tokens(item_name))
+
+        category = parsed.get("category")
+        if isinstance(category, str) and category.strip():
+            query_parts.append(category.strip())
+            tokens.extend(_normalize_visual_tokens(category))
+
+        attributes = parsed.get("attributes")
+        if isinstance(attributes, list):
+            for attr in attributes:
+                if isinstance(attr, str):
+                    tokens.extend(_normalize_visual_tokens(attr))
+
+        keywords = parsed.get("keywords")
+        if isinstance(keywords, list):
+            for kw in keywords:
+                if isinstance(kw, str):
+                    tokens.extend(_normalize_visual_tokens(kw))
+
+        if not tokens:
+            tokens = _normalize_visual_tokens(text)
+
+        return _dedupe_tokens(tokens, limit=14), " ".join(query_parts).strip()
+    except Exception:
+        return [], ""
+
+
+def _score_visual_candidate(
+    product: Any,
+    keyword_set: set[str],
+    query_phrase: str
+) -> float:
+    title = str(getattr(product, "title", "") or "")
+    short_description = str(getattr(product, "short_description", "") or "")
+    description = str(getattr(product, "description", "") or "")
+    sku = str(getattr(product, "sku", "") or "")
+    catalog_text = f"{title} {short_description} {description} {sku}"
+    product_tokens = set(_normalize_visual_tokens(catalog_text))
+
+    overlap = (len(product_tokens.intersection(keyword_set)) / max(len(keyword_set), 1)) if keyword_set else 0.0
+    title_lower = title.lower().strip()
+    phrase = (query_phrase or "").lower().strip()
+    phrase_score = 1.0 if phrase and phrase in title_lower else 0.0
+    fuzzy_score = SequenceMatcher(None, phrase, title_lower).ratio() if phrase else 0.0
+
+    rating = float(getattr(product, "rating", 0.0) or 0.0)
+    rating_score = max(0.0, min(rating, 5.0)) / 5.0
+    review_count = int(getattr(product, "review_count", 0) or 0)
+    review_score = min(math.log1p(max(review_count, 0)) / math.log(250.0), 1.0)
+
+    return (
+        0.46 * overlap
+        + 0.24 * fuzzy_score
+        + 0.14 * phrase_score
+        + 0.10 * rating_score
+        + 0.06 * review_score
+    )
 
 
 def format_product_for_response(product, db):
@@ -444,6 +598,151 @@ def search_products(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching products: {str(e)}")
+
+
+@router.post("/visual-search")
+@router.post("/visual-search/")
+async def visual_search_products(
+    screenshot: UploadFile = File(...),
+    hint: Optional[str] = Form(None),
+    limit: int = Form(24),
+    db: Session = Depends(get_db)
+):
+    """
+    AI Visual Search 2.0
+
+    Upload a screenshot and retrieve:
+    - exact_matches: closest same-product candidates
+    - similar_products: visually/semantically similar products
+    - cheaper_alternatives: lower-price alternatives relative to top match
+    """
+    content_type = (screenshot.content_type or "").lower()
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Unsupported image format. Use JPG, PNG, or WEBP.")
+
+    image_bytes = await screenshot.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded screenshot is empty.")
+    if len(image_bytes) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Screenshot too large. Maximum 12MB allowed.")
+    limit = max(6, min(limit, 48))
+
+    hint_text = (hint or "").strip()
+    hint_tokens = _normalize_visual_tokens(hint_text)
+    ai_tokens, ai_query = _extract_visual_terms_with_gemini(image_bytes, hint_text, content_type)
+    keywords = _dedupe_tokens(hint_tokens + ai_tokens, limit=14)
+
+    base_query = db.query(models.Product).filter(
+        models.Product.is_active == True,
+        models.Product.approval_status == "approved",
+        models.Product.inventory_count > 0
+    )
+
+    if keywords:
+        token_filters = []
+        for token in keywords[:10]:
+            pattern = f"%{token}%"
+            token_filters.extend([
+                models.Product.title.ilike(pattern),
+                models.Product.short_description.ilike(pattern),
+                models.Product.description.ilike(pattern),
+                models.Product.sku.ilike(pattern),
+            ])
+        candidates = base_query.filter(or_(*token_filters)).limit(280).all()
+    else:
+        candidates = base_query.order_by(models.Product.created_at.desc()).limit(140).all()
+
+    if not candidates:
+        return {
+            "exact_matches": [],
+            "similar_products": [],
+            "cheaper_alternatives": [],
+            "detected_query": ai_query or " ".join(keywords),
+            "keywords": keywords,
+            "meta": {
+                "used_ai": bool(ai_tokens),
+                "note": "No active products found for visual search."
+            }
+        }
+
+    query_phrase = ai_query or " ".join(keywords[:4]).strip()
+    keyword_set = set(keywords)
+
+    scored: list[tuple[float, Any]] = []
+    for candidate in candidates:
+        score = _score_visual_candidate(candidate, keyword_set, query_phrase)
+        # Keep broader pool when no strong keywords are available.
+        if score >= 0.06 or not keywords:
+            scored.append((score, candidate))
+
+    if not scored:
+        scored = [(_score_visual_candidate(candidate, keyword_set, query_phrase), candidate) for candidate in candidates[:80]]
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    exact_products: list[Any] = []
+    similar_products: list[Any] = []
+    for score, candidate in scored:
+        if score >= 0.72 and len(exact_products) < 8:
+            exact_products.append(candidate)
+        elif score >= 0.24 and len(similar_products) < limit:
+            similar_products.append(candidate)
+        if len(similar_products) >= limit and len(exact_products) >= 8:
+            break
+
+    if not similar_products:
+        similar_products = [product for _, product in scored[:limit]]
+
+    selected_ids = {int(getattr(product, "id", 0)) for product in (exact_products + similar_products)}
+
+    reference_price = 0.0
+    reference_pool = exact_products if exact_products else similar_products
+    if reference_pool:
+        reference_price = float(getattr(reference_pool[0], "price", 0.0) or 0.0)
+
+    cheaper_products: list[Any] = []
+    if reference_price > 0:
+        for score, candidate in scored:
+            candidate_id = int(getattr(candidate, "id", 0))
+            if candidate_id in selected_ids:
+                continue
+            candidate_price = float(getattr(candidate, "price", 0.0) or 0.0)
+            if candidate_price <= 0:
+                continue
+            if candidate_price <= reference_price * 0.90 and score >= 0.14:
+                cheaper_products.append(candidate)
+            if len(cheaper_products) >= 12:
+                break
+
+    if not cheaper_products and reference_price > 0:
+        fallback_cheaper = (
+            base_query
+            .filter(models.Product.price > 0, models.Product.price < reference_price)
+            .order_by(models.Product.price.asc())
+            .limit(12)
+            .all()
+        )
+        cheaper_products = fallback_cheaper
+
+    exact_payload = [format_product_for_response(product, db) for product in exact_products]
+    similar_payload = [format_product_for_response(product, db) for product in similar_products]
+    cheaper_payload = [format_product_for_response(product, db) for product in cheaper_products]
+
+    return {
+        "exact_matches": exact_payload,
+        "similar_products": similar_payload,
+        "cheaper_alternatives": cheaper_payload,
+        "detected_query": ai_query or " ".join(keywords).strip(),
+        "keywords": keywords,
+        "meta": {
+            "used_ai": bool(ai_tokens),
+            "input_hint": hint_text,
+            "matched_candidates": len(scored),
+            "reference_price": reference_price if reference_price > 0 else None,
+            "note": "Results are ranked by visual+semantic similarity and ecommerce relevance."
+        }
+    }
 
 
 @router.get("/slug/{slug}", response_model=schemas.Product)
