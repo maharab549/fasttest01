@@ -1,4 +1,5 @@
 from typing import Any, List
+import os
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
         super().__init__(**data)
         if isinstance(self.cors_origins, str):
             self.cors_origins = json.loads(self.cors_origins)
+        if (not self.gemini_api_key or self.gemini_api_key.startswith("default-")) and os.getenv("GOOGLE_API_KEY"):
+            self.gemini_api_key = str(os.getenv("GOOGLE_API_KEY") or "").strip()
     
     # App
     debug: bool = True

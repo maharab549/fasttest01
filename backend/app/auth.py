@@ -20,6 +20,7 @@ pwd_context = CryptContext(
 
 # Token security
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -96,6 +97,31 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Return current user when bearer token is provided, otherwise None."""
+    if credentials is None:
+        return None
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    token_data = verify_token(credentials.credentials, credentials_exception)
+    return get_user(db, username=token_data.username)
+
+
+def get_current_active_user_optional(
+    current_user: Optional[User] = Depends(get_current_user_optional),
+) -> Optional[User]:
+    if current_user and not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 

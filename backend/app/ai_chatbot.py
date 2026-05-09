@@ -357,21 +357,33 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
 
             CHAT_SESSIONS[session_id] = {"provider": "gemini_rest", "messages": history_msgs}
 
-            # Flatten messages into a single prompt for generateText
+            # Flatten messages into a single prompt for generateContent
             prompt_parts = [str(m.get("content")) for m in history_msgs if m.get("content")]
             prompt = "\n\n".join(prompt_parts)
 
-            # Choose a model name; this may be adjusted depending on availability
-            model = "gemini-1.5"
-            url = f"https://generativelanguage.googleapis.com/v1beta2/models/{model}:generateText?key={GEMINI_API_KEY}"
+            model = "gemini-1.5-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
             payload = {
-                "prompt": {"text": prompt},
-                "temperature": 0.3,
-                "maxOutputTokens": 512,
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 512,
+                }
             }
 
-            resp = requests.post(url, json=payload, timeout=15)
+            resp = requests.post(
+                url,
+                headers={"X-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                json=payload,
+                timeout=15,
+            )
             resp.raise_for_status()
             data = resp.json()
 
@@ -381,7 +393,16 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
                 candidates = data.get("candidates") or data.get("outputs") or []
                 if candidates and isinstance(candidates, list):
                     first = candidates[0]
-                    text = first.get("content") or first.get("output") or first.get("text") or first.get("message")
+                    if isinstance(first, dict):
+                        content = first.get("content")
+                        if isinstance(content, dict):
+                            parts = content.get("parts") or []
+                            if parts and isinstance(parts, list):
+                                first_part = parts[0]
+                                if isinstance(first_part, dict):
+                                    text = first_part.get("text")
+                        if not text:
+                            text = first.get("output") or first.get("text") or first.get("message")
                 if not text:
                     text = data.get("output") or data.get("response") or None
                     if isinstance(text, dict):
