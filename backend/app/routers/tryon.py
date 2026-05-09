@@ -2,20 +2,26 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from io import BytesIO
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from PIL import Image, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter
 from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
+from ..config import settings
 from ..database import get_db
 from ..media_paths import make_absolute_media_url, resolve_media_file
 
 router = APIRouter(prefix="/tryon", tags=["tryon"])
+logger = logging.getLogger(__name__)
+
+NVIDIA_IMAGE_EDIT_MODEL = "qwen-image-edit"
+NVIDIA_IMAGE_EDIT_URL = "https://integrate.api.nvidia.com/v1/images/edits"
 
 try:
     import cv2  # type: ignore
@@ -25,6 +31,9 @@ except Exception:  # pragma: no cover - optional AI stack
     cv2 = None
     mp = None
     np = None
+
+if mp is not None and not hasattr(mp, "solutions"):
+    mp = None
 
 
 def _get_product_image_url(product: models.Product, db: Session) -> Optional[str]:
@@ -89,6 +98,203 @@ def _load_product_image(product_image_ref: str) -> Image.Image:
     raise HTTPException(status_code=400, detail="Product image is unavailable for try-on")
 
 
+def _infer_garment_prompt(product: models.Product) -> str:
+    category_name = ((getattr(product.category, "name", None) or "") if getattr(product, "category", None) else "").strip().lower()
+    title = (getattr(product, "title", None) or "").strip().lower()
+    short_description = (getattr(product, "short_description", None) or "").strip().lower()
+    description = (getattr(product, "description", None) or "").strip().lower()
+    hint_text = " ".join(part for part in [category_name, title, short_description, description] if part)
+
+    if any(token in hint_text for token in ("dress", "gown", "maxi", "kurti", "abaya", "frock")):
+        return (
+            "This product is a dress. Keep the dress length, waist placement, neckline, sleeve shape, and skirt drape natural. "
+            "Maintain realistic flow from shoulders through waist and hips without turning it into a separate top and skirt."
+        )
+    if any(token in hint_text for token in ("jacket", "blazer", "coat", "hoodie", "cardigan", "outerwear")):
+        return (
+            "This product is a jacket or outerwear piece. Preserve the front opening, lapels, collar shape, zipper or button area, hem thickness, and layered structure. "
+            "Make it sit naturally over the person's torso like a real outer layer."
+        )
+    if any(token in hint_text for token in ("shirt", "t-shirt", "tshirt", "tee", "top", "blouse", "polo")):
+        return (
+            "This product is a shirt or top. Preserve the neckline, shoulder seams, sleeve length, chest fit, and fabric fall across the torso. "
+            "Keep the garment fitted like worn clothing rather than a flat overlay."
+        )
+    return (
+        "Preserve the product's original fit, neckline, sleeve structure, hem, and fabric behavior so the result looks like the same garment being worn in real life."
+    )
+
+
+def _build_tryon_edit_prompt(product: models.Product) -> str:
+    product_title = (getattr(product, "title", None) or "this product").strip()
+    category_name = ((getattr(product.category, "name", None) or "") if getattr(product, "category", None) else "").strip()
+    garment_context = f"Product name: {product_title}. "
+    if category_name:
+        garment_context += f"Category: {category_name}. "
+
+    return (
+        garment_context +
+        "Transform this fashion preview into a photorealistic virtual try-on image. "
+        "The garment already visible in the preview is the exact product that must be worn by the person. "
+        "Keep the person's face, identity, body shape, pose, skin tone, hair, and background unchanged. "
+        "Preserve the clothing category, neckline, sleeve length, silhouette, fabric texture, color, print placement, and brand details from the garment already shown. "
+        "Blend the garment naturally onto the torso with realistic drape, folds, stitching, lighting, occlusion, and shadows so it looks truly worn instead of pasted. "
+        f"{_infer_garment_prompt(product)} "
+        "Do not add a second garment, do not replace the person, do not change the camera angle, and do not alter the lower body or background."
+    )
+
+
+def _encode_image_as_jpeg_bytes(img: Image.Image, quality: int = 92) -> bytes:
+    buffer = BytesIO()
+    img.convert("RGB").save(buffer, format="JPEG", quality=quality, optimize=True)
+    return buffer.getvalue()
+
+
+def _decode_image_from_b64(image_b64: str) -> Optional[Image.Image]:
+    try:
+        raw = base64.b64decode(image_b64)
+        return Image.open(BytesIO(raw)).convert("RGBA")
+    except Exception:
+        return None
+
+
+def _extract_nvidia_image_result(payload: object) -> Optional[dict[str, str]]:
+    if not isinstance(payload, dict):
+        return None
+
+    direct_keys = ("b64_json", "image_base64", "image_b64", "output_b64")
+    for key in direct_keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return {"kind": "base64", "value": value.strip()}
+
+    for key in ("url", "image_url", "output_url"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return {"kind": "url", "value": value.strip()}
+
+    for key in ("data", "images", "outputs"):
+        items = payload.get(key)
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    nested = _extract_nvidia_image_result(item)
+                    if nested:
+                        return nested
+
+    nested = payload.get("result")
+    if isinstance(nested, dict):
+        return _extract_nvidia_image_result(nested)
+
+    return None
+
+
+def _load_image_from_url(image_url: str) -> Optional[Image.Image]:
+    try:
+        with urlopen(image_url, timeout=30) as response:
+            data = response.read()
+        return Image.open(BytesIO(data)).convert("RGBA")
+    except Exception:
+        return None
+
+
+def _refine_tryon_with_nvidia(seed_img: Image.Image, product: models.Product) -> tuple[Optional[Image.Image], dict[str, object]]:
+    api_key = (settings.nvidia_api_key or "").strip()
+    if not api_key:
+        return None, {
+            "attempted": False,
+            "applied": False,
+            "reason": "missing_api_key",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    try:
+        import requests  # type: ignore
+    except Exception:
+        return None, {
+            "attempted": False,
+            "applied": False,
+            "reason": "requests_unavailable",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    image_bytes = _encode_image_as_jpeg_bytes(seed_img)
+    files = {
+        "image": ("tryon-seed.jpg", image_bytes, "image/jpeg"),
+    }
+    data = {
+        "model": NVIDIA_IMAGE_EDIT_MODEL,
+        "prompt": _build_tryon_edit_prompt(product),
+        "response_format": "b64_json",
+    }
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        response = requests.post(
+            NVIDIA_IMAGE_EDIT_URL,
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=120,
+        )
+    except Exception:
+        return None, {
+            "attempted": True,
+            "applied": False,
+            "reason": "request_failed",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    if response.status_code >= 400:
+        return None, {
+            "attempted": True,
+            "applied": False,
+            "reason": f"http_{response.status_code}",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    try:
+        payload = response.json()
+    except Exception:
+        return None, {
+            "attempted": True,
+            "applied": False,
+            "reason": "invalid_json",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    result = _extract_nvidia_image_result(payload)
+    if not result:
+        return None, {
+            "attempted": True,
+            "applied": False,
+            "reason": "missing_image_output",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    refined_img: Optional[Image.Image] = None
+    if result["kind"] == "base64":
+        refined_img = _decode_image_from_b64(result["value"])
+    elif result["kind"] == "url":
+        refined_img = _load_image_from_url(result["value"])
+
+    if refined_img is None:
+        return None, {
+            "attempted": True,
+            "applied": False,
+            "reason": f"unreadable_{result['kind']}_output",
+            "model": NVIDIA_IMAGE_EDIT_MODEL,
+        }
+
+    return refined_img, {
+        "attempted": True,
+        "applied": True,
+        "reason": "ok",
+        "model": NVIDIA_IMAGE_EDIT_MODEL,
+        "output_kind": result["kind"],
+    }
+
+
 def _remove_white_background(img: Image.Image) -> Image.Image:
     """Simple background cleaner for catalog images with plain white background."""
     rgba = img.convert("RGBA")
@@ -115,9 +321,26 @@ def _prepare_product_layer(product_img: Image.Image) -> Image.Image:
     # Clean catalog background, crop to garment bounds, and feather hard edges.
     layer = _remove_white_background(product_img.convert("RGBA"))
     layer = _crop_to_visible_pixels(layer)
-    alpha = layer.getchannel("A").filter(ImageFilter.GaussianBlur(radius=1.2))
+    alpha = layer.getchannel("A").filter(ImageFilter.GaussianBlur(radius=1.35))
+    rgb = Image.merge("RGB", layer.split()[:3])
+    rgb = ImageEnhance.Color(rgb).enhance(1.04)
+    rgb = ImageEnhance.Contrast(rgb).enhance(1.03)
+    layer = rgb.convert("RGBA")
     layer.putalpha(alpha)
     return layer
+
+
+def _composite_with_soft_shadow(base: Image.Image, overlay: Image.Image, position: tuple[int, int]) -> Image.Image:
+    composed = base.copy()
+
+    shadow_alpha = overlay.getchannel("A").filter(ImageFilter.GaussianBlur(radius=6.0))
+    if shadow_alpha.getbbox():
+        shadow = Image.new("RGBA", overlay.size, (0, 0, 0, 92))
+        shadow.putalpha(shadow_alpha.point(lambda value: int(value * 0.30)))
+        composed.alpha_composite(shadow, (position[0] + 5, position[1] + 8))
+
+    composed.alpha_composite(overlay, position)
+    return composed
 
 
 def _compose_tryon_heuristic(selfie_img: Image.Image, product_img: Image.Image) -> Image.Image:
@@ -130,19 +353,32 @@ def _compose_tryon_heuristic(selfie_img: Image.Image, product_img: Image.Image) 
 
     product_layer = _prepare_product_layer(product_img)
 
-    target_w = int(w * 0.62)
-    target_h = int(h * 0.55)
-    x = int((w - target_w) * 0.5)
-    y = int(h * 0.25)
+    aspect_ratio = product_layer.width / max(product_layer.height, 1)
+    max_width = int(w * 0.72)
+    max_height = int(h * 0.56)
 
-    product_layer.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-    overlay_w, overlay_h = product_layer.size
-    paste_x = x + max((target_w - overlay_w) // 2, 0)
-    paste_y = y + max((target_h - overlay_h) // 2, 0)
+    target_h = max(int(h * 0.40), max_height)
+    target_w = int(target_h * aspect_ratio)
 
-    composed = base.copy()
-    composed.alpha_composite(product_layer, (paste_x, paste_y))
-    return composed
+    if target_w > max_width:
+        target_w = max_width
+        target_h = int(target_w / max(aspect_ratio, 0.01))
+
+    target_w = max(int(w * 0.48), min(target_w, max_width))
+    target_h = max(int(h * 0.34), min(target_h, max_height))
+
+    fitted = product_layer.copy()
+    fitted.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+    overlay_w, overlay_h = fitted.size
+
+    paste_x = int((w - overlay_w) * 0.5)
+    paste_y = int(h * 0.23)
+    if aspect_ratio < 0.85:
+        paste_y = int(h * 0.20)
+    elif aspect_ratio > 1.25:
+        paste_y = int(h * 0.26)
+
+    return _composite_with_soft_shadow(base, fitted, (paste_x, paste_y))
 
 
 def _pose_torso_quad(selfie_img: Image.Image) -> Optional["np.ndarray"]:
@@ -223,9 +459,9 @@ def _pose_torso_quad(selfie_img: Image.Image) -> Optional["np.ndarray"]:
     return quad
 
 
-def _compose_tryon_ai(selfie_img: Image.Image, product_img: Image.Image) -> Optional[Image.Image]:
+def _compose_tryon_ai(selfie_img: Image.Image, product_img: Image.Image, product: models.Product) -> tuple[Optional[Image.Image], dict[str, object]]:
     if cv2 is None or np is None:
-        return None
+        return None, {"pose_used": False, "nvidia": {"attempted": False, "applied": False, "reason": "cv_stack_unavailable"}}
 
     base = selfie_img.convert("RGBA")
     w, h = base.size
@@ -234,12 +470,12 @@ def _compose_tryon_ai(selfie_img: Image.Image, product_img: Image.Image) -> Opti
 
     torso_quad = _pose_torso_quad(base)
     if torso_quad is None:
-        return None
+        return None, {"pose_used": False, "nvidia": {"attempted": False, "applied": False, "reason": "pose_not_detected"}}
 
     garment = _prepare_product_layer(product_img)
     gw, gh = garment.size
     if gw < 4 or gh < 4:
-        return None
+        return None, {"pose_used": False, "nvidia": {"attempted": False, "applied": False, "reason": "garment_invalid"}}
 
     src = np.array(
         [[0, 0], [gw - 1, 0], [gw - 1, gh - 1], [0, gh - 1]],
@@ -260,20 +496,34 @@ def _compose_tryon_ai(selfie_img: Image.Image, product_img: Image.Image) -> Opti
     warped_img = Image.fromarray(warped, mode="RGBA")
 
     # Soften edges to avoid sticker look.
-    alpha = warped_img.getchannel("A").filter(ImageFilter.GaussianBlur(radius=1.0))
+    alpha = warped_img.getchannel("A").filter(ImageFilter.GaussianBlur(radius=1.6))
     warped_img.putalpha(alpha)
 
-    composed = base.copy()
-    composed.alpha_composite(warped_img)
-    return composed
+    seed_preview = _composite_with_soft_shadow(base, warped_img, (0, 0))
+    refined, nvidia_debug = _refine_tryon_with_nvidia(seed_preview, product)
+    if refined is not None:
+        return refined, {"pose_used": True, "nvidia": nvidia_debug}
+
+    return seed_preview, {"pose_used": True, "nvidia": nvidia_debug}
 
 
-def _compose_tryon(selfie_img: Image.Image, product_img: Image.Image) -> Image.Image:
+def _compose_tryon(selfie_img: Image.Image, product_img: Image.Image, product: models.Product) -> tuple[Image.Image, str, dict[str, object]]:
     """Prefer AI pose-guided composition and fallback to heuristic if needed."""
-    ai_result = _compose_tryon_ai(selfie_img, product_img)
+    ai_result, ai_debug = _compose_tryon_ai(selfie_img, product_img, product)
     if ai_result is not None:
-        return ai_result
-    return _compose_tryon_heuristic(selfie_img, product_img)
+        if bool(ai_debug.get("nvidia", {}).get("applied")):
+            return ai_result, "AI pose-guided placement with NVIDIA refinement", {
+                "render_path": "nvidia_refined",
+                **ai_debug,
+            }
+        return ai_result, "AI pose-guided placement", {
+            "render_path": "pose_guided",
+            **ai_debug,
+        }
+    return _compose_tryon_heuristic(selfie_img, product_img), "Smart fallback placement", {
+        "render_path": "fallback_heuristic",
+        **ai_debug,
+    }
 
 
 @router.post("/preview")
@@ -318,7 +568,27 @@ async def generate_tryon_preview(
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to load product image for try-on")
 
-    composed = _compose_tryon(selfie_img, product_img)
+    composed, mode, debug_info = _compose_tryon(selfie_img, product_img, product)
+
+    nvidia_debug = debug_info.get("nvidia") if isinstance(debug_info.get("nvidia"), dict) else {}
+    render_path = debug_info.get("render_path")
+    if render_path != "nvidia_refined":
+        log_message = (
+            "Try-on used fallback path for product_id=%s user_id=%s render_path=%s "
+            "nvidia_attempted=%s nvidia_applied=%s reason=%s"
+        )
+        log_args = (
+            product_id,
+            current_user.id if current_user else 0,
+            render_path,
+            nvidia_debug.get("attempted", False),
+            nvidia_debug.get("applied", False),
+            nvidia_debug.get("reason", "unknown"),
+        )
+        if nvidia_debug.get("attempted", False):
+            logger.warning(log_message, *log_args)
+        else:
+            logger.info(log_message, *log_args)
 
     # Encode the composed image as JPEG base64 so no disk storage is needed.
     # Render's filesystem is ephemeral — saved files vanish on redeploy.
@@ -336,5 +606,11 @@ async def generate_tryon_preview(
         "product_image_url": make_absolute_media_url(product_image_ref),
         "product_id": product_id,
         "user_id": current_user.id if current_user else 0,
-        "note": "AI try-on placement enabled when pose detection is available; fallback mode is used otherwise."
+        "note": f"{mode} used for this preview.",
+        "debug": {
+            "used_nvidia_edit": debug_info.get("render_path") == "nvidia_refined",
+            "render_path": debug_info.get("render_path"),
+            "nvidia_refinement": debug_info.get("nvidia"),
+            "pose_used": debug_info.get("pose_used", False),
+        },
     }

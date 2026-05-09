@@ -617,8 +617,8 @@ async def visual_search_products(
     - cheaper_alternatives: lower-price alternatives relative to top match
     """
     content_type = (screenshot.content_type or "").lower()
-    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
-    if content_type not in allowed_types:
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/*"}
+    if content_type and content_type not in allowed_types and not content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Unsupported image format. Use JPG, PNG, or WEBP.")
 
     image_bytes = await screenshot.read()

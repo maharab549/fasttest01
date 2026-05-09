@@ -1,12 +1,4 @@
-try:
-    import google.generativeai as genai
-except Exception:
-    genai = None
 import requests
-try:
-    from groq import Groq
-except Exception:
-    Groq = None
 
 from app.config import settings
 from typing import Dict, Any
@@ -33,37 +25,8 @@ OFF_TOPIC_RESPONSE = (
     "Please ask about products, orders, delivery, payments, returns, account, seller/admin features, or support pages."
 )
 
-# Initialize providers (API keys loaded from settings)
-GEMINI_API_KEY = settings.gemini_api_key
-GROQ_API_KEY = settings.groq_api_key
-USE_GEMINI = False  # Flags to track availability
-USE_GROQ = False
-
-if GEMINI_API_KEY and genai is not None:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        USE_GEMINI = True
-    except Exception as e:
-        print(f"Failed to configure Gemini API: {e}")
-        USE_GEMINI = False
-
-# If genai isn't available we can fall back to calling the Generative Language REST API
-# directly using the provided API key. We'll keep USE_GEMINI_REST True if we at least have
-# an API key and requests is available; later code will choose genai client first if
-# present, otherwise REST.
-USE_GEMINI_REST = False
-if GEMINI_API_KEY and genai is None:
-    USE_GEMINI_REST = True
-
-# Configure Groq if available
-GROQ_CLIENT = None
-if GROQ_API_KEY and Groq is not None:
-    try:
-        GROQ_CLIENT = Groq(api_key=GROQ_API_KEY)
-        USE_GROQ = True
-    except Exception as e:
-        print(f"Failed to configure Groq API: {e}")
-        USE_GROQ = False
+NVIDIA_API_KEY = settings.nvidia_api_key
+USE_NVIDIA = bool(NVIDIA_API_KEY)
 
 
 def is_megamart_related_query(user_query: str) -> bool:
@@ -109,7 +72,7 @@ def get_off_topic_response() -> str:
 
 
 def get_fallback_response(user_query: str) -> str:
-    """Provides a simple rule-based fallback response when Gemini is unavailable.
+    """Provides a simple rule-based fallback response when NVIDIA is unavailable.
 
     This version also appends a small set of follow-up suggestions (intent-aware)
     to help guide the user to common next steps.
@@ -251,8 +214,8 @@ def get_followup_suggestions(intent: str) -> str:
     return "You can try: " + " • ".join(picks)
 
 def get_chatbot_response(user_query: str, session_id: str = "default_user") -> str:
-    """Generates a response to a user query using Google Gemini API, maintaining conversation history.
-    Falls back to rule-based responses if Gemini is unavailable.
+    """Generates a response to a user query using NVIDIA's chat completion API, maintaining conversation history.
+    Falls back to rule-based responses if NVIDIA is unavailable.
     
     Args:
         user_query: The user's message.
@@ -265,200 +228,55 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
     if not is_megamart_related_query(user_query):
         return get_off_topic_response()
 
-    # Provider selection: SDK-first (try multiple SDK call shapes) -> REST Gemini -> Groq -> Fallback
+    # Provider selection: NVIDIA API -> fallback
     system_instruction = build_megamart_system_instruction()
 
-    # 1) Try SDK if available (be tolerant of different SDK shapes/versions)
-    if genai is not None and GEMINI_API_KEY:
-        try:
-            # If SDK exposes a configure helper, call it safely
-            if hasattr(genai, "configure"):
-                try:
-                    genai.configure(api_key=GEMINI_API_KEY)
-                except Exception:
-                    # not critical; some SDKs accept the key per-call
-                    pass
+    try:
+        history_msgs = CHAT_SESSIONS.get(session_id, {}).get("messages", [])
+        if not history_msgs or history_msgs[0].get("role") != "system":
+            history_msgs = [{"role": "system", "content": system_instruction}]
 
-            # Variant A: genai.chat.completions.create (newer chat-style APIs)
-            chat_api = getattr(genai, "chat", None)
-            if chat_api is not None and hasattr(chat_api, "completions") and hasattr(chat_api.completions, "create"):
-                try:
-                    messages = [
-                        {"role": "system", "content": system_instruction},
-                        {"role": "user", "content": user_query},
-                    ]
-                    resp = genai.chat.completions.create(model="gemini-1.5", messages=messages, temperature=0.3)
-                    # resp may contain different shapes
-                    text = None
-                    if hasattr(resp, "output_text"):
-                        text = resp.output_text
-                    elif isinstance(resp, dict):
-                        # common dict shape
-                        choices = resp.get("choices") or resp.get("candidates")
-                        if choices and isinstance(choices, list):
-                            first = choices[0]
-                            if isinstance(first, dict):
-                                text = first.get("message") or first.get("content") or first.get("output") or first.get("text")
-                    if text:
-                        return text
-                except Exception:
-                    pass
+        history_msgs.append({"role": "user", "content": user_query})
 
-            # Variant B: genai.models.generate (text-generation style)
-            models_api = getattr(genai, "models", None)
-            if models_api is not None and hasattr(models_api, "generate"):
-                try:
-                    prompt = system_instruction + "\n\n" + user_query
-                    resp = genai.models.generate(model="gemini-1.5", prompt=[{"type":"text","text":prompt}], temperature=0.3, max_output_tokens=512)
-                    # extract text
-                    if isinstance(resp, dict):
-                        # candidates / output
-                        candidates = resp.get("candidates") or resp.get("outputs") or []
-                        if candidates and isinstance(candidates, list):
-                            first = candidates[0]
-                            text = first.get("content") or first.get("output") or first.get("text") if isinstance(first, dict) else None
-                            if text:
-                                return text
-                except Exception:
-                    pass
+        if len(history_msgs) > 13:
+            history_msgs = [history_msgs[0]] + history_msgs[-12:]
 
-            # Variant C: older pattern (GenerativeModel with start_chat)
-            if hasattr(genai, "GenerativeModel"):
-                try:
-                    model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system_instruction)
-                    chat = model.start_chat(history=[])
-                    response = chat.send_message(user_query, request_options={"timeout": 15})
-                    if hasattr(response, "text"):
-                        return response.text
-                except Exception:
-                    pass
-        except Exception as e:
-            # Fall through to REST/Groq/fallback
-            print(f"Gemini SDK attempt failed: {e}")
+        CHAT_SESSIONS[session_id] = {"provider": "nvidia", "messages": history_msgs}
 
-    # If genai client not available, try REST endpoint
-    if USE_GEMINI_REST and GEMINI_API_KEY:
-        try:
-            # Build a simple prompt that includes a system instruction and recent conversation
-            system_instruction = build_megamart_system_instruction()
-
-            # Maintain rolling history per session (system + last N messages)
-            history_msgs = CHAT_SESSIONS.get(session_id, {}).get("messages", [])
-            # Ensure system at start
-            if not history_msgs or history_msgs[0].get("role") != "system":
-                history_msgs = [{"role": "system", "content": system_instruction}]
-
-            # Append user message
-            history_msgs.append({"role": "user", "content": user_query})
-
-            # Keep length reasonable
-            if len(history_msgs) > 15:
-                history_msgs = [history_msgs[0]] + history_msgs[-14:]
-
-            CHAT_SESSIONS[session_id] = {"provider": "gemini_rest", "messages": history_msgs}
-
-            # Flatten messages into a single prompt for generateContent
-            prompt_parts = [str(m.get("content")) for m in history_msgs if m.get("content")]
-            prompt = "\n\n".join(prompt_parts)
-
-            model = "gemini-1.5-flash"
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": prompt}
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "maxOutputTokens": 512,
-                }
-            }
-
-            resp = requests.post(
-                url,
-                headers={"X-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-                json=payload,
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            # Attempt to extract text from common response shapes
-            text = None
-            if isinstance(data, dict):
-                candidates = data.get("candidates") or data.get("outputs") or []
-                if candidates and isinstance(candidates, list):
-                    first = candidates[0]
-                    if isinstance(first, dict):
-                        content = first.get("content")
-                        if isinstance(content, dict):
-                            parts = content.get("parts") or []
-                            if parts and isinstance(parts, list):
-                                first_part = parts[0]
-                                if isinstance(first_part, dict):
-                                    text = first_part.get("text")
-                        if not text:
-                            text = first.get("output") or first.get("text") or first.get("message")
-                if not text:
-                    text = data.get("output") or data.get("response") or None
-                    if isinstance(text, dict):
-                        text = text.get("content") or text.get("text")
-
-            if not text:
-                return get_fallback_response(user_query)
-
-            # Append assistant response to session history
-            CHAT_SESSIONS[session_id]["messages"].append({"role": "assistant", "content": text})
-            return text
-        except Exception as e:
-            print(f"Error calling Gemini REST API, falling back: {e}")
-            if session_id in CHAT_SESSIONS:
-                del CHAT_SESSIONS[session_id]
-
-    if USE_GROQ and GROQ_CLIENT is not None:
-        try:
-            # Prepare a small rolling chat history for better context
-            system_message = {
-                "role": "system",
-                "content": build_megamart_system_instruction()
-            }
-
-            if session_id not in CHAT_SESSIONS or CHAT_SESSIONS[session_id].get("provider") != "groq":
-                CHAT_SESSIONS[session_id] = {"provider": "groq", "messages": [system_message]}
-
-            messages = CHAT_SESSIONS[session_id]["messages"]
-            messages.append({"role": "user", "content": user_query})
-
-            # Keep only the last ~6 turns to stay concise
-            if len(messages) > 13:
-                # keep system + last 12
-                messages = [messages[0]] + messages[-12:]
-                CHAT_SESSIONS[session_id]["messages"] = messages
-
-            # Call Groq chat completion
-            resp = GROQ_CLIENT.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                messages=messages,
-                temperature=0.6,
-                max_tokens=512,
-                top_p=1,
-            )
-            text = resp.choices[0].message.content if resp.choices else ""
-            if not text:
-                return get_fallback_response(user_query)
-
-            messages.append({"role": "assistant", "content": text})
-            return text
-        except Exception as e:
-            print(f"Error with Groq API, falling back to rule-based responses: {e}")
-            if session_id in CHAT_SESSIONS:
-                del CHAT_SESSIONS[session_id]
+        resp = requests.post(
+            "https://integrate.api.nvidia.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "meta/llama-4-maverick-17b-128e-instruct",
+                "messages": history_msgs,
+                "max_tokens": 512,
+                "temperature": 0.6,
+                "top_p": 1.00,
+                "frequency_penalty": 0.00,
+                "presence_penalty": 0.00,
+                "stream": False,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = None
+        choices = data.get("choices") or []
+        if choices:
+            msg = choices[0].get("message") or {}
+            text = msg.get("content") if isinstance(msg, dict) else None
+        if not text:
             return get_fallback_response(user_query)
 
-    # Final fallback
-    return get_fallback_response(user_query)
+        CHAT_SESSIONS[session_id]["messages"].append({"role": "assistant", "content": text})
+        return text
+    except Exception as e:
+        print(f"Error with NVIDIA API, falling back: {e}")
+        if session_id in CHAT_SESSIONS:
+            del CHAT_SESSIONS[session_id]
+        return get_fallback_response(user_query)
 

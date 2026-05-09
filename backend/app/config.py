@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # AI
     gemini_api_key: str = "default-gemini-key"
     groq_api_key: str | None = None
+    nvidia_api_key: str | None = None
     ollama_cloud_ssh_public_key: str | None = None
     
     # CORS
