@@ -25,11 +25,17 @@ NVIDIA_IMAGE_EDIT_URL = "https://integrate.api.nvidia.com/v1/images/edits"
 
 try:
     import cv2  # type: ignore
-    import mediapipe as mp  # type: ignore
-    import numpy as np  # type: ignore
 except Exception:  # pragma: no cover - optional AI stack
     cv2 = None
+
+try:
+    import mediapipe as mp  # type: ignore
+except Exception:  # pragma: no cover - optional AI stack
     mp = None
+
+try:
+    import numpy as np  # type: ignore
+except Exception:  # pragma: no cover - optional AI stack
     np = None
 
 if mp is not None and not hasattr(mp, "solutions"):
@@ -520,9 +526,20 @@ def _compose_tryon(selfie_img: Image.Image, product_img: Image.Image, product: m
             "render_path": "pose_guided",
             **ai_debug,
         }
-    return _compose_tryon_heuristic(selfie_img, product_img), "Smart fallback placement", {
+
+    heuristic_result = _compose_tryon_heuristic(selfie_img, product_img)
+    refined, nvidia_debug = _refine_tryon_with_nvidia(heuristic_result, product)
+    if refined is not None:
+        return refined, "Heuristic placement with NVIDIA refinement", {
+            "render_path": "nvidia_refined",
+            "pose_used": False,
+            "nvidia": nvidia_debug,
+        }
+
+    return heuristic_result, "Smart fallback placement", {
         "render_path": "fallback_heuristic",
-        **ai_debug,
+        "pose_used": bool(ai_debug.get("pose_used", False)),
+        "nvidia": nvidia_debug,
     }
 
 
