@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 from io import BytesIO
 from typing import Optional
 from urllib.parse import urlparse
@@ -22,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 NVIDIA_IMAGE_EDIT_MODEL = "qwen-image-edit"
 NVIDIA_IMAGE_EDIT_URL = "https://integrate.api.nvidia.com/v1/images/edits"
+NVIDIA_IMAGE_EDIT_URL_CANDIDATES = [
+    "https://integrate.api.nvidia.com/v1/images/edits",
+    "https://integrate.api.nvidia.com/v1/openai/images/edits",
+    "https://integrate.api.nvidia.com/v1/image/edits",
+]
 
 try:
     import cv2  # type: ignore
@@ -233,49 +239,74 @@ def _refine_tryon_with_nvidia(seed_img: Image.Image, product: models.Product) ->
         "prompt": _build_tryon_edit_prompt(product),
         "response_format": "b64_json",
     }
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    }
 
-    try:
-        response = requests.post(
-            NVIDIA_IMAGE_EDIT_URL,
-            headers=headers,
-            files=files,
-            data=data,
-            timeout=120,
-        )
-    except Exception:
-        return None, {
-            "attempted": True,
-            "applied": False,
-            "reason": "request_failed",
-            "model": NVIDIA_IMAGE_EDIT_MODEL,
-        }
+    custom_endpoint = (
+        str(getattr(settings, "nvidia_image_edit_url", "") or "").strip()
+        or str(os.getenv("NVIDIA_IMAGE_EDIT_URL", "") or "").strip()
+        or str(os.getenv("NVIDIA_TRYON_IMAGE_EDIT_URL", "") or "").strip()
+    )
+    endpoints = [custom_endpoint] if custom_endpoint else [NVIDIA_IMAGE_EDIT_URL]
+    for candidate in NVIDIA_IMAGE_EDIT_URL_CANDIDATES:
+        if candidate not in endpoints:
+            endpoints.append(candidate)
 
-    if response.status_code >= 400:
-        return None, {
-            "attempted": True,
-            "applied": False,
-            "reason": f"http_{response.status_code}",
-            "model": NVIDIA_IMAGE_EDIT_MODEL,
-        }
+    last_failure_reason = "request_failed"
+    last_failure_endpoint = endpoints[0]
+    payload: object = {}
+    result: Optional[dict[str, str]] = None
 
-    try:
-        payload = response.json()
-    except Exception:
-        return None, {
-            "attempted": True,
-            "applied": False,
-            "reason": "invalid_json",
-            "model": NVIDIA_IMAGE_EDIT_MODEL,
-        }
+    for endpoint in endpoints:
+        try:
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                files=files,
+                data=data,
+                timeout=120,
+            )
+        except Exception:
+            last_failure_reason = "request_failed"
+            last_failure_endpoint = endpoint
+            continue
 
-    result = _extract_nvidia_image_result(payload)
+        if response.status_code >= 400:
+            body_excerpt = ""
+            try:
+                body_excerpt = (response.text or "").strip().replace("\n", " ")[:180]
+            except Exception:
+                body_excerpt = ""
+            last_failure_reason = f"http_{response.status_code}"
+            if body_excerpt:
+                last_failure_reason = f"{last_failure_reason}:{body_excerpt}"
+            last_failure_endpoint = endpoint
+            continue
+
+        try:
+            payload = response.json()
+        except Exception:
+            last_failure_reason = "invalid_json"
+            last_failure_endpoint = endpoint
+            continue
+
+        result = _extract_nvidia_image_result(payload)
+        if result:
+            last_failure_endpoint = endpoint
+            break
+
+        last_failure_reason = "missing_image_output"
+        last_failure_endpoint = endpoint
+
     if not result:
         return None, {
             "attempted": True,
             "applied": False,
-            "reason": "missing_image_output",
+            "reason": last_failure_reason,
             "model": NVIDIA_IMAGE_EDIT_MODEL,
+            "endpoint": last_failure_endpoint,
         }
 
     refined_img: Optional[Image.Image] = None
@@ -290,6 +321,7 @@ def _refine_tryon_with_nvidia(seed_img: Image.Image, product: models.Product) ->
             "applied": False,
             "reason": f"unreadable_{result['kind']}_output",
             "model": NVIDIA_IMAGE_EDIT_MODEL,
+            "endpoint": last_failure_endpoint,
         }
 
     return refined_img, {
@@ -298,6 +330,7 @@ def _refine_tryon_with_nvidia(seed_img: Image.Image, product: models.Product) ->
         "reason": "ok",
         "model": NVIDIA_IMAGE_EDIT_MODEL,
         "output_kind": result["kind"],
+        "endpoint": last_failure_endpoint,
     }
 
 

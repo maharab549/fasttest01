@@ -1,8 +1,11 @@
 import requests
+import logging
 
 from app.config import settings
 from typing import Dict, Any
 import re
+
+logger = logging.getLogger(__name__)
 
 # Dictionary to store chat sessions (user_id -> chat_session)
 # Since FastAPI is stateless, this is a simplified in-memory store.
@@ -25,8 +28,10 @@ OFF_TOPIC_RESPONSE = (
     "Please ask about products, orders, delivery, payments, returns, account, seller/admin features, or support pages."
 )
 
-NVIDIA_API_KEY = settings.nvidia_api_key
+NVIDIA_API_KEY = (settings.nvidia_api_key or "").strip()
 USE_NVIDIA = bool(NVIDIA_API_KEY)
+NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_CHAT_MODEL = "meta/llama-4-maverick-17b-128e-instruct"
 
 
 def is_megamart_related_query(user_query: str) -> bool:
@@ -228,6 +233,10 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
     if not is_megamart_related_query(user_query):
         return get_off_topic_response()
 
+    # If NVIDIA key is not configured, use deterministic local fallback directly.
+    if not USE_NVIDIA:
+        return get_fallback_response(user_query)
+
     # Provider selection: NVIDIA API -> fallback
     system_instruction = build_megamart_system_instruction()
 
@@ -244,14 +253,14 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
         CHAT_SESSIONS[session_id] = {"provider": "nvidia", "messages": history_msgs}
 
         resp = requests.post(
-            "https://integrate.api.nvidia.com/v1/chat/completions",
+            NVIDIA_CHAT_URL,
             headers={
                 "Authorization": f"Bearer {NVIDIA_API_KEY}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "meta/llama-4-maverick-17b-128e-instruct",
+                "model": NVIDIA_CHAT_MODEL,
                 "messages": history_msgs,
                 "max_tokens": 512,
                 "temperature": 0.6,
@@ -275,7 +284,7 @@ def get_chatbot_response(user_query: str, session_id: str = "default_user") -> s
         CHAT_SESSIONS[session_id]["messages"].append({"role": "assistant", "content": text})
         return text
     except Exception as e:
-        print(f"Error with NVIDIA API, falling back: {e}")
+        logger.warning("NVIDIA chatbot request failed; using fallback response. reason=%s", str(e))
         if session_id in CHAT_SESSIONS:
             del CHAT_SESSIONS[session_id]
         return get_fallback_response(user_query)
